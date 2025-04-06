@@ -1,0 +1,84 @@
+<!-- Search and Filter Controls -->
+<c-row class="mb-4">
+  <c-col sm="3">
+    <label>Search by</label>
+    <select [formControl]="searchField" class="form-select">
+      <option value="ProductID">ProductID</option>
+      <option value="ProductDescr">ProductDescr</option>
+      <option value="Level">Level</option>
+      <option value="BusinessUnit">BusinessUnit</option>
+      <option value="IsDailyForecastRequired">IsDailyForecastRequired</option>
+      <option value="IsNew">IsNew</option>
+      <option value="ProductFamily">ProductFamily</option>
+      
+    </select>
+  </c-col>
+  <c-col sm="5">
+    <label>Search term</label>
+    <input type="text" class="form-control" [formControl]="searchTerm" placeholder="Type to search..." />
+  </c-col>
+  <c-col sm="2" class="d-flex align-items-end">
+    <button class="btn btn-outline-secondary w-100" (click)="searchTerm.setValue('')">
+      Clear Search
+    </button>
+  </c-col>
+  <c-col sm="2" class="d-flex align-items-end">
+    <button class="btn btn-outline-primary w-100" (click)="exportToCSV()">
+      Export to CSV
+    </button>
+  </c-col>
+</c-row>
+
+<!-- Results Table -->
+<c-row>
+  <c-col>
+    <c-card>
+      <c-card-header>Product Data</c-card-header>
+      <c-card-body>
+        <table cTable striped responsive hover class="table mb-0 border">
+          <thead>
+            <tr>
+              <th (click)="sortBy('ProductID')">ProductID</th>
+              <th (click)="sortBy('ProductDescr')">ProductDescr</th>
+              <th (click)="sortBy('Level')">Level</th>
+              <th (click)="sortBy('BusinessUnit')">BusinessUnit</th>
+              <th (click)="sortBy('IsDailyForecastRequired')">IsDailyForecastRequired</th>
+              <th (click)="sortBy('IsNew')">IsNew</th>
+              <th (click)="sortBy('ProductFamily')">ProductFamily</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (item of paginatedData; track item.ProductID) {
+              <tr>
+                <td>{{ item.ProductID }}</td>
+                <td>{{ item.ProductDescr }}</td>
+                <td>{{ item.Level }}</td>
+                <td>{{ item.BusinessUnit }}</td>
+                <td>{{ item.IsDailyForecastRequired }}</td>
+                <td>{{ item.IsNew }}</td>
+                <td>{{ item.ProductFamily }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </c-card-body>
+      <c-card-footer class="d-flex justify-content-center" *ngIf="totalPages > 1">
+        <nav>
+          <ul class="pagination mb-0">
+            <li class="page-item" [class.disabled]="currentPage === 1">
+              <a class="page-link" (click)="setPage(currentPage - 1)">Previous</a>
+            </li>
+            @for (page of pageRange(); track page) {
+              <li class="page-item" [class.active]="page === currentPage">
+                <a class="page-link" (click)="setPage(page)">{{ page }}</a>
+              </li>
+            }
+            <li class="page-item" [class.disabled]="currentPage === totalPages">
+              <a class="page-link" (click)="setPage(currentPage + 1)">Next</a>
+            </li>
+          </ul>
+        </nav>
+      </c-card-footer>
+    </c-card>
+  </c-col>
+</c-row>
