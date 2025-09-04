@@ -1,0 +1,76 @@
+<div class="p-4 space-y-4">
+    <h2 class="text-xl font-semibold">Save a Search </h2>
+  
+    <!-- Builder row: Domain / Field / Value / Combine-with / Add -->
+    <div class="flex gap-3 items-end flex-wrap">
+      <div>
+        <label class="block text-sm mb-1">Domain</label>
+        <select class="border rounded p-2" [ngModel]="domain()" (ngModelChange)="onDomainChange($event)">
+          <option value="product">Product</option>
+          <option value="channel">Channel</option>
+          <option value="location">Location</option>
+        </select>
+      </div>
+  
+      <div>
+        <label class="block text-sm mb-1">Field</label>
+        <select class="border rounded p-2" [ngModel]="fieldKey()" (ngModelChange)="onFieldChange($event)">
+          <ng-container *ngFor="let f of fields">
+            <option *ngIf="f.domain === domain()" [value]="f.key">{{ f.label }}</option>
+          </ng-container>
+        </select>
+      </div>
+  
+      <div class="min-w-[240px]">
+        <label class="block text-sm mb-1">Value</label>
+        <select class="border rounded p-2 w-full" [ngModel]="selectedValue()" (ngModelChange)="selectedValue.set($event)">
+          <option *ngFor="let v of fieldValues()" [value]="v">{{ v }}</option>
+        </select>
+      </div>
+  
+      <div>
+        <label class="block text-sm mb-1">Combine with</label>
+        <select class="border rounded p-2" [ngModel]="nextOp()" (ngModelChange)="nextOp.set($event)">
+          <option value="AND">AND</option>
+          <option value="OR">OR</option>
+        </select>
+      </div>
+  
+      <button class="px-3 py-2 border rounded" (click)="addCriterion()">Add</button>
+    </div>
+  
+    <!-- Current criteria with per-item AND/OR (except first) -->
+    <div *ngIf="criteria().length" class="border rounded p-3">
+      <div class="text-sm text-gray-600 mb-2">
+        Criteria (evaluated left to right; AND has higher precedence than OR).
+      </div>
+      <ul class="space-y-2">
+        <li *ngFor="let c of criteria(); let i = index" class="flex items-center gap-2">
+          <ng-container *ngIf="i > 0">
+            <select class="border rounded p-1" [ngModel]="c.op || 'AND'" (ngModelChange)="setOp(i, $event)">
+              <option value="AND">AND</option>
+              <option value="OR">OR</option>
+            </select>
+          </ng-container>
+          <code class="px-2 py-1 bg-gray-50 border rounded">{{ c.key }}:{{ c.value }}</code>
+          <button class="ml-2 underline text-sm" (click)="removeCriterion(i)">remove</button>
+        </li>
+      </ul>
+    </div>
+  
+    <!-- Preview of the query string that will be saved -->
+    <div>
+      <div class="text-sm text-gray-600 mb-1">Will save as query:</div>
+      <code class="block p-2 bg-gray-50 border rounded min-h-[40px]">{{ builtQuery() || '(none)' }}</code>
+    </div>
+  
+    <!-- Save -->
+    <div class="flex gap-2 items-center">
+      <input class="p-2 border rounded" [ngModel]="saveName()" (ngModelChange)="saveName.set($event)" placeholder="Save as… (name)" />
+      <button class="px-3 py-2 border rounded" (click)="save()" [disabled]="saving()">Save Query</button>
+    </div>
+  
+    <div *ngIf="error()" class="text-red-600">{{ error() }}</div>
+    <div *ngIf="savedOk()" class="text-green-700">Saved!</div>
+  </div>
+  

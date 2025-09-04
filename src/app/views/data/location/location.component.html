@@ -1,4 +1,38 @@
-<!-- 🔍 Search Controls -->
+<!-- 🔖 Saved Search + Load -->
+<c-row class="mb-3">
+  <c-col sm="6">
+    <label>Saved Search</label>
+    <select class="form-select" [formControl]="selectedSavedIndex">
+      <option [ngValue]="-1">-- Choose a saved search --</option>
+      <option *ngFor="let s of savedSearches; let i = index" [ngValue]="i">
+        {{ s.name }} — {{ s.query }}
+      </option>
+    </select>
+  </c-col>
+
+  <c-col sm="3" class="d-flex align-items-end">
+    <button class="btn btn-primary w-100"
+            (click)="loadFromSaved()"
+            [disabled]="loading || (selectedSavedIndex.value ?? -1) === -1">
+      Load
+    </button>
+  </c-col>
+</c-row>
+
+<!-- ⚠️ Status -->
+<c-row *ngIf="errorMessage" class="mb-2">
+  <c-col>
+    <div class="alert alert-danger mb-0">{{ errorMessage }}</div>
+  </c-col>
+</c-row>
+
+<c-row *ngIf="loading" class="mb-2">
+  <c-col>
+    <div class="alert alert-info mb-0">Loading…</div>
+  </c-col>
+</c-row>
+
+<!-- 🔍 Search Controls (typed) -->
 <c-row class="mb-4">
   <c-col sm="3">
     <label>Search by</label>
@@ -26,7 +60,7 @@
 </c-row>
 
 <!-- 📊 Results Table -->
-<c-row>
+<c-row *ngIf="!loading && filteredData.length > 0">
   <c-col>
     <c-card>
       <c-card-header>Location Data</c-card-header>
@@ -53,24 +87,62 @@
         </table>
       </c-card-body>
 
-      <!-- 📃 Pagination -->
+      <!-- 📃 Condensed Pagination -->
       <c-card-footer class="d-flex justify-content-center" *ngIf="totalPages > 1">
         <nav>
           <ul class="pagination mb-0">
+            <!-- First/Prev -->
             <li class="page-item" [class.disabled]="currentPage === 1">
-              <a class="page-link" (click)="setPage(currentPage - 1)">Previous</a>
+              <a class="page-link" (click)="setPage(1)">« First</a>
             </li>
-            @for (page of pageRange(); track page) {
+            <li class="page-item" [class.disabled]="currentPage === 1">
+              <a class="page-link" (click)="setPage(currentPage - 1)">‹ Prev</a>
+            </li>
+
+            <!-- Leading ellipsis -->
+            <li class="page-item" *ngIf="visiblePages()[0] > 1">
+              <a class="page-link" (click)="setPage(1)">1</a>
+            </li>
+            <li class="page-item disabled" *ngIf="visiblePages()[0] > 2">
+              <span class="page-link">…</span>
+            </li>
+
+            <!-- Window -->
+            @for (page of visiblePages(); track page) {
               <li class="page-item" [class.active]="page === currentPage">
                 <a class="page-link" (click)="setPage(page)">{{ page }}</a>
               </li>
             }
+
+            <!-- Trailing ellipsis -->
+            <li class="page-item disabled"
+                *ngIf="visiblePages()[visiblePages().length - 1] < (totalPages - 1)">
+              <span class="page-link">…</span>
+            </li>
+            <li class="page-item"
+                *ngIf="visiblePages()[visiblePages().length - 1] < totalPages">
+              <a class="page-link" (click)="setPage(totalPages)">{{ totalPages }}</a>
+            </li>
+
+            <!-- Next/Last -->
             <li class="page-item" [class.disabled]="currentPage === totalPages">
-              <a class="page-link" (click)="setPage(currentPage + 1)">Next</a>
+              <a class="page-link" (click)="setPage(currentPage + 1)">Next ›</a>
+            </li>
+            <li class="page-item" [class.disabled]="currentPage === totalPages">
+              <a class="page-link" (click)="setPage(totalPages)">Last »</a>
             </li>
           </ul>
         </nav>
       </c-card-footer>
     </c-card>
+  </c-col>
+</c-row>
+
+<!-- 😶 No Data -->
+<c-row *ngIf="!loading && filteredData.length === 0">
+  <c-col>
+    <p class="text-muted text-center mt-4">
+      No matching locations found. Choose a saved search and click <strong>Load</strong>, or use the typed search above.
+    </p>
   </c-col>
 </c-row>

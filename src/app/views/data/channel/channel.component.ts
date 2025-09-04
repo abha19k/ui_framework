@@ -1,12 +1,13 @@
-import { DOCUMENT, NgStyle, NgIf, NgFor, NgSwitch, NgClass } from '@angular/common';
+import { CommonModule } from '@angular/common';
 import { Component, OnInit, inject } from '@angular/core';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
-import { HttpClient, HttpClientModule } from '@angular/common/http';
+import { HttpClient, HttpClientModule, HttpParams } from '@angular/common/http';
 import {
   ButtonDirective, CardBodyComponent, CardComponent, CardFooterComponent, CardHeaderComponent, ColComponent,
   RowComponent, TableDirective, TextColorDirective
 } from '@coreui/angular';
 import { IconDirective } from '@coreui/icons-angular';
+import { firstValueFrom } from 'rxjs';
 
 interface IChannel {
   ChannelID: string;
@@ -14,87 +15,188 @@ interface IChannel {
   Level: string;
 }
 
+interface KeyTriplet { ProductID: string; ChannelID: string; LocationID: string; }
+interface SearchResult { query: string; count: number; keys: KeyTriplet[]; }
+interface SavedSearch { id?: number; name: string; query: string; created_at?: string; }
+
 @Component({
   standalone: true,
   selector: 'app-channel',
   templateUrl: 'channel.component.html',
   styleUrls: ['channel.component.scss'],
   imports: [
+    CommonModule, ReactiveFormsModule, HttpClientModule,
     TextColorDirective, CardComponent, CardBodyComponent, CardHeaderComponent, CardFooterComponent,
-    RowComponent, ColComponent, ButtonDirective, IconDirective,
-    NgIf, NgFor, NgClass, NgSwitch, NgStyle,
-    ReactiveFormsModule, TableDirective, HttpClientModule
+    RowComponent, ColComponent, ButtonDirective, IconDirective, TableDirective
   ]
 })
 export class ChannelComponent implements OnInit {
   private http: HttpClient = inject(HttpClient);
+  private readonly API = 'http://127.0.0.1:8000/api';
 
+  // Data
   public channelData: IChannel[] = [];
-  public filteredData: IChannel[] = [];
   public searchResults: IChannel[] = [];
+  public filteredData: IChannel[] = [];
 
-  public searchField = new FormControl('ChannelID');
+  // Typed search
+  public searchField = new FormControl<'ChannelID' | 'ChannelDescr' | 'Level'>('ChannelID');
   public searchTerm = new FormControl('');
 
+  // Saved searches
+  public savedSearches: SavedSearch[] = [];
+  public selectedSavedIndex = new FormControl<number>(-1);
+
+  // UI state
+  public loading = false;
+  public errorMessage: string | null = null;
+
+  // Pagination & sorting
   public currentPage = 1;
   public itemsPerPage = 5;
   public totalPages = 1;
-
   public sortColumn: keyof IChannel | '' = '';
   public sortAsc: boolean = true;
 
   ngOnInit(): void {
-    this.loadCSV();
+    this.loadChannels();
+    this.refreshSavedSearches();
 
-    this.searchTerm.valueChanges.subscribe(term => {
-      this.performSearch(term || '');
-    });
+    this.searchTerm.valueChanges.subscribe(term => this.performSearch(term || ''));
+    this.searchField.valueChanges.subscribe(() => this.performSearch(this.searchTerm.value || ''));
+  }
 
-    this.searchField.valueChanges.subscribe(() => {
-      this.performSearch(this.searchTerm.value || '');
+  /** Load channel master from backend */
+  private loadChannels() {
+    this.loading = true;
+    this.http.get<IChannel[]>(`${this.API}/channels`).subscribe({
+      next: rows => {
+        this.channelData = (rows || []).map(c => ({
+          ChannelID: String(c.ChannelID ?? ''),
+          ChannelDescr: String(c.ChannelDescr ?? ''),
+          Level: String((c as any).Level ?? '')
+        }));
+        this.searchResults = [];
+        this.filteredData = [];
+        this.updatePagination();
+      },
+      error: err => {
+        console.error('GET /channels failed', err);
+        this.errorMessage = 'Failed to load channels.';
+      },
+      complete: () => { this.loading = false; }
     });
   }
 
-  loadCSV() {
-    this.http.get('assets/data/Channel.csv', { responseType: 'text' }).subscribe(data => {
-      const lines = data.split('\n');
-      this.channelData = lines.slice(1)
-        .map(line => line.trim())
-        .filter(line => line)
-        .map(line => {
-          const cols = line.split(',');
-          return {
-            ChannelID: cols[0],
-            ChannelDescr: cols[1],
-            Level: cols[2]
-          } as IChannel;
-        });
-
-      this.filteredData = []; // show nothing until filters/search used
+  /** Saved searches list */
+  refreshSavedSearches() {
+    this.http.get<SavedSearch[]>(`${this.API}/saved-searches`).subscribe({
+      next: rows => { this.savedSearches = rows || []; },
+      error: e => { console.error('saved-searches failed', e); }
     });
   }
 
-  performSearch(term: string) {
-    const field = this.searchField.value as keyof IChannel;
-    const lowerTerm = term.toLowerCase();
-
-    this.searchResults = this.channelData.filter(p =>
-      p[field]?.toLowerCase().includes(lowerTerm)
-    );
-
-    this.sortColumn = '';
-    this.currentPage = 1;
-    this.updatePagination();
+  /** Only run saved searches that include channel attributes */
+  private savedQueryHasChannelField(q: string): boolean {
+    const s = (q || '').toLowerCase();
+    return ['channelid:', 'channeldescr:', 'channellevel:'].some(tag => s.includes(tag));
   }
 
+  async loadFromSaved() {
+    this.errorMessage = null;
+    const idx = this.selectedSavedIndex.value ?? -1;
+    if (idx < 0 || idx >= this.savedSearches.length) {
+      this.errorMessage = 'Please choose a saved search.';
+      return;
+    }
+    const q = this.savedSearches[idx].query;
+    if (!this.savedQueryHasChannelField(q)) {
+      this.errorMessage = 'This saved search does not include channel attributes. Channel page only runs searches with channel fields.';
+      this.searchResults = [];
+      this.filteredData = [];
+      this.updatePagination();
+      return;
+    }
+    await this.runQueryAndFilterChannels(q);
+  }
+
+  /** Map UI field to backend field used by /api/search */
+  private backendFieldFor(uiField: string): string | null {
+    switch ((uiField || '').toLowerCase()) {
+      case 'channelid': return 'channelid';
+      case 'channeldescr': return 'channeldescr';
+      case 'level': return 'channellevel'; // backend expects channellevel
+      default: return null;
+    }
+  }
+
+  private buildChannelQuery(fieldUI: string, term: string): string | null {
+    const field = this.backendFieldFor(fieldUI);
+    if (!field) return null;
+    let value = (term || '').trim();
+    if (!value) return null;
+    if (!/[.*%]/.test(value)) value = `*${value}*`; // add wildcards if none
+    if (/\s/.test(value)) value = `"${value}"`;     // quote if spaces
+    return `${field}:${value}`;
+  }
+
+  /** Typed search → backend keys → filter channels by ChannelID */
+  async performSearch(term: string) {
+    this.errorMessage = null;
+    if (!term?.trim()) {
+      this.searchResults = [];
+      this.filteredData = [];
+      this.updatePagination();
+      return;
+    }
+    const q = this.buildChannelQuery(this.searchField.value || 'ChannelID', term);
+    if (!q) {
+      this.errorMessage = 'Please choose a valid channel attribute.';
+      this.searchResults = [];
+      this.filteredData = [];
+      this.updatePagination();
+      return;
+    }
+    await this.runQueryAndFilterChannels(q);
+  }
+
+  private async runQueryAndFilterChannels(q: string) {
+    this.loading = true;
+    try {
+      const params = new HttpParams().set('q', q).set('limit', 20000).set('offset', 0);
+      const res = await firstValueFrom(
+        this.http.get<SearchResult>(`${this.API}/search`, { params })
+      );
+      const keys = res?.keys ?? [];
+      if (!keys.length) {
+        this.searchResults = [];
+        this.filteredData = [];
+        this.updatePagination();
+        return;
+      }
+      const allowed = new Set(keys.map(k => k.ChannelID));
+      this.searchResults = this.channelData.filter(c => allowed.has(c.ChannelID));
+      this.filteredData = [...this.searchResults];
+      this.currentPage = 1;
+      this.updatePagination();
+    } catch (e: any) {
+      console.error('Channel search failed', e);
+      this.errorMessage = e?.error?.detail || e?.message || 'Search failed.';
+      this.searchResults = [];
+      this.filteredData = [];
+      this.updatePagination();
+    } finally {
+      this.loading = false;
+    }
+  }
+
+  /** Export current filtered rows */
   exportToCSV() {
-    if (!this.searchResults.length) return;
+    const data = this.filteredData;
+    if (!data.length) return;
 
-    const header = Object.keys(this.searchResults[0]);
-    const rows = this.searchResults.map(row =>
-      header.map(field => `"${(row as any)[field]}"`).join(',')
-    );
-
+    const header = Object.keys(data[0]);
+    const rows = data.map(row => header.map(field => `"${(row as any)[field]}"`).join(','));
     const csvContent = [header.join(','), ...rows].join('\r\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -107,35 +209,31 @@ export class ChannelComponent implements OnInit {
     document.body.removeChild(link);
   }
 
+  /** Sorting + pagination over the visible dataset */
   sortBy(column: keyof IChannel) {
-    if (this.sortColumn === column) {
-      this.sortAsc = !this.sortAsc;
-    } else {
-      this.sortColumn = column;
-      this.sortAsc = true;
-    }
+    if (this.sortColumn === column) this.sortAsc = !this.sortAsc;
+    else { this.sortColumn = column; this.sortAsc = true; }
 
-    const data = this.searchTerm.value ? this.searchResults : this.filteredData;
-    data.sort((a, b) => {
-      const valA = a[column]?.toLowerCase() ?? '';
-      const valB = b[column]?.toLowerCase() ?? '';
+    this.filteredData.sort((a, b) => {
+      const valA = (a[column] as any)?.toLowerCase?.() ?? String(a[column] ?? '');
+      const valB = (b[column] as any)?.toLowerCase?.() ?? String(b[column] ?? '');
       return this.sortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
     });
   }
 
   updatePagination() {
-    const data = this.searchTerm.value ? this.searchResults : this.filteredData;
-    this.totalPages = Math.ceil(data.length / this.itemsPerPage);
+    this.totalPages = Math.max(1, Math.ceil(this.filteredData.length / this.itemsPerPage));
+    if (this.currentPage > this.totalPages) this.currentPage = this.totalPages;
   }
 
   get paginatedData(): IChannel[] {
-    const data = this.searchTerm.value ? this.searchResults : this.filteredData;
     const start = (this.currentPage - 1) * this.itemsPerPage;
-    return data.slice(start, start + this.itemsPerPage);
+    return this.filteredData.slice(start, start + this.itemsPerPage);
   }
 
   setPage(page: number) {
-    this.currentPage = page;
+    const total = Math.max(1, this.totalPages);
+    this.currentPage = Math.min(Math.max(1, page), total);
   }
 
   pageRange(): number[] {

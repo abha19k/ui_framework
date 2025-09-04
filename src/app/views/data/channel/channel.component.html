@@ -1,4 +1,39 @@
-<!-- 🔍 Search and CSV Export Controls -->
+<!-- 🔖 Saved Search + Load -->
+<c-row class="mb-3">
+  <c-col sm="8">
+    <label>Saved Search</label>
+    <select class="form-select" [formControl]="selectedSavedIndex">
+      <option [ngValue]="-1">-- Choose a saved search --</option>
+      <option *ngFor="let s of savedSearches; let i = index" [ngValue]="i">
+        {{ s.name }} — {{ s.query }}
+      </option>
+    </select>
+    <small class="text-muted">
+      Only saved queries that include channel attributes will load on this page.
+    </small>
+  </c-col>
+  <c-col sm="4" class="d-flex align-items-end">
+    <button class="btn btn-primary w-100"
+            (click)="loadFromSaved()"
+            [disabled]="loading || (selectedSavedIndex.value ?? -1) === -1">
+      Load
+    </button>
+  </c-col>
+</c-row>
+
+<!-- ⚠️ Status -->
+<c-row *ngIf="errorMessage" class="mb-2">
+  <c-col>
+    <div class="alert alert-danger mb-0">{{ errorMessage }}</div>
+  </c-col>
+</c-row>
+<c-row *ngIf="loading" class="mb-2">
+  <c-col>
+    <div class="alert alert-info mb-0">Loading…</div>
+  </c-col>
+</c-row>
+
+<!-- 🔍 Typed Search + Export -->
 <c-row class="mb-4">
   <c-col sm="3">
     <label>Search by</label>

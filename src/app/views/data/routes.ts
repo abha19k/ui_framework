@@ -27,10 +27,10 @@ export const routes: Routes = [
         }
       },
       {
-        path: 'demand-unit',
-        loadComponent: () => import('../data/demand-unit/demand-unit.component').then(m => m.DemandUnitComponent),
+        path: 'forecast-element',
+        loadComponent: () => import('../data/forecast-element/forecast-element.component').then(m => m.ForecastElementComponent),
         data: {
-          title: 'Demand Unit'
+          title: 'Forecast Element'
         }
       },
       {
@@ -46,7 +46,21 @@ export const routes: Routes = [
         data: {
           title: 'Location'
         }
-      }       
+      },
+      {
+        path: 'forecast',
+        loadComponent: () => import('../data/forecast/forecast.component').then(m => m.ForecastComponent),
+        data: {
+          title: 'Forecast'
+        }
+      },
+      {
+        path: 'history',
+        loadComponent: () => import('../data/history/history.component').then(m => m.HistoryComponent),
+        data: {
+          title: 'History'
+        }
+      }             
     ]
   }
 ];

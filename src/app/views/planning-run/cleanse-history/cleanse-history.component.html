@@ -1,0 +1,114 @@
+<c-card>
+    <c-card-header>Cleanse History — Settings</c-card-header>
+  
+    <c-card-body>
+      <!-- Bind the root form once -->
+      <form [formGroup]="form" class="row g-3">
+  
+        <!-- 🔖 Saved Profiles (optional quick load) -->
+        <div class="col-12">
+          <label class="form-label">Saved Profiles</label>
+          <div class="d-flex gap-2 align-items-center flex-wrap">
+            <button
+              type="button"
+              class="btn btn-outline-secondary btn-sm"
+              *ngFor="let p of profiles"
+              (click)="loadProfile(p)">
+              {{ p.name }}
+            </button>
+          </div>
+        </div>
+  
+        <!-- 📛 Profile Name -->
+        <div class="col-sm-4">
+          <label class="form-label">Profile name</label>
+          <input class="form-control" placeholder="Profile name…" formControlName="profileName" />
+        </div>
+  
+        <!-- 📈 Outlier Method -->
+        <div class="col-sm-4">
+          <label class="form-label">Outlier method</label>
+          <select class="form-select" formControlName="outlierMethod">
+            <option>Z-Score</option>
+            <option>IQR</option>
+            <option>MAD</option>
+            <option>Hampel</option>
+          </select>
+        </div>
+  
+        <!-- 🧮 Outlier Parameters (nested group) -->
+        <div class="col-12" formGroupName="outlierParams">
+          <div class="row g-3">
+  
+            <!-- Z-Score -->
+            <div class="col-sm-3" *ngIf="outlierMethod === 'Z-Score'">
+              <label class="form-label">Z threshold</label>
+              <input type="number" step="0.1" class="form-control" formControlName="zThreshold" />
+            </div>
+  
+            <!-- IQR -->
+            <div class="col-sm-3" *ngIf="outlierMethod === 'IQR'">
+              <label class="form-label">k (IQR multiplier)</label>
+              <input type="number" step="0.1" class="form-control" formControlName="iqrK" />
+            </div>
+  
+            <!-- MAD -->
+            <div class="col-sm-3" *ngIf="outlierMethod === 'MAD'">
+              <label class="form-label">k (MAD multiplier)</label>
+              <input type="number" step="0.1" class="form-control" formControlName="madK" />
+            </div>
+  
+            <!-- Hampel -->
+            <div class="col-sm-3" *ngIf="outlierMethod === 'Hampel'">
+              <label class="form-label">Window (periods)</label>
+              <input type="number" class="form-control" formControlName="hampelWindow" />
+            </div>
+            <div class="col-sm-3" *ngIf="outlierMethod === 'Hampel'">
+              <label class="form-label">k (MAD multiplier)</label>
+              <input type="number" step="0.1" class="form-control" formControlName="hampelK" />
+            </div>
+  
+          </div>
+        </div>
+  
+        <!-- ⛳ Missing Data Strategy -->
+        <div class="col-sm-4">
+          <label class="form-label">Missing data strategy</label>
+          <select class="form-select" formControlName="missingMethod">
+            <option>Drop Rows</option>
+            <option>Forward Fill</option>
+            <option>Backward Fill</option>
+            <option>Zero</option>
+            <option>Mean</option>
+            <option>Median</option>
+            <option>Linear Interpolate</option>
+          </select>
+        </div>
+  
+        <!-- 🧩 Missing Params -->
+        <div class="col-12" formGroupName="missingParams">
+          <div class="row g-3">
+            <div class="col-sm-3">
+              <label class="form-label">Interpolation order</label>
+              <input type="number" class="form-control" formControlName="interpolateOrder" />
+            </div>
+            <div class="col-sm-3">
+              <label class="form-label">Fill constant</label>
+              <input type="number" class="form-control" formControlName="fillConstant" />
+            </div>
+          </div>
+        </div>
+  
+      </form>
+  
+      <!-- ⚠️ Status -->
+      <div *ngIf="errorMessage" class="alert alert-danger mt-3 mb-0">{{ errorMessage }}</div>
+    </c-card-body>
+  
+    <c-card-footer class="d-flex gap-2">
+      <button class="btn btn-primary" (click)="saveProfile()" [disabled]="loading">
+        Save profile
+      </button>
+    </c-card-footer>
+  </c-card>
+  

@@ -29,7 +29,13 @@ export const routes: Routes = [
       {
         path: 'planning-run',
         loadChildren: () => import('./views/planning-run/routes').then((m) => m.routes)
-      },      
+      },
+      {
+        path: 'search',
+        loadChildren: () => import('./views/search/routes').then(m => m.routes),
+        },
+        { path: '', pathMatch: 'full', redirectTo: 'search' },
+        { path: '**', redirectTo: 'search' },      
       {
         path: 'theme',
         loadChildren: () => import('./views/theme/routes').then((m) => m.routes)

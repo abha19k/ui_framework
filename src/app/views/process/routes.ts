@@ -4,12 +4,12 @@ export const routes: Routes = [
   {
     path: '',
     data: {
-      title: 'Data'
+      title: 'Process'
     },
     children: [
       {
         path: '',
-        redirectTo: 'history',
+        redirectTo: 'forecast-tuning',
         pathMatch: 'full'
       },
       {

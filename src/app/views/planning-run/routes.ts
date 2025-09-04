@@ -4,35 +4,35 @@ export const routes: Routes = [
   {
     path: '',
     data: {
-      title: 'Data'
+      title: 'Planning Run'
     },
     children: [
       {
         path: '',
-        redirectTo: 'history',
+        redirectTo: 'store-forecast',
         pathMatch: 'full'
       },
       {
-        path: 'history',
-        loadComponent: () => import('../data/history/history.component').then(m => m.HistoryComponent),
+        path: 'store-forecast',
+        loadComponent: () => import('./store-forecast/store-forecast.component').then(m => m.StoreForecastComponent),
         data: {
-          title: 'History'
+          title: 'Store Forecast'
         }
       },
       {
-        path: 'channel',
-        loadComponent: () => import('../data/channel/channel.component').then(m => m.ChannelComponent),
+        path: 'load-history',
+        loadComponent: () => import('./load-history/load-history.component').then(m => m.LoadHistoryComponent),
         data: {
-          title: 'Channel'
+          title: 'Load History'
         }
       },
       {
-        path: 'demand-unit',
-        loadComponent: () => import('../data/demand-unit/demand-unit.component').then(m => m.DemandUnitComponent),
-        data: {
-          title: 'Demand Unit'
-        }
+      path: 'cleanse-history',
+      loadComponent: () => import('./cleanse-history/cleanse-history.component').then(m => m.CleanseHistoryComponent),
+      data: {
+        title: 'Cleanse History'
       }
+    }
     ]
   }
 ];

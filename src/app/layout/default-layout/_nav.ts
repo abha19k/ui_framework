@@ -21,8 +21,8 @@ export const navItems: INavData[] = [
         icon: 'nav-icon-bullet'
       },
       {
-        name: 'Demand Unit',
-        url: '/data/demand-unit',
+        name: 'Forecast Element',
+        url: '/data/forecast-element',
         icon: 'nav-icon-bullet'
       },
       {
@@ -73,9 +73,28 @@ export const navItems: INavData[] = [
     name: 'Planning Run',
     url: '/planning-run',
     iconComponent: { name: 'cil-speedometer' },
-    // badge: {
-    //   color: 'info',
-    //   text: 'NEW'
-    // }
-  },    
+    children: [
+      {
+        name: 'Load History',
+        url: '/planning-run/load-history',
+        icon: 'nav-icon-bullet'
+      },
+      {
+        name: 'Cleanse History',
+        url: '/planning-run/cleanse-history',
+        icon: 'nav-icon-bullet'
+      },
+      {
+        name: 'Forecast Tuning',
+        url: '/planning-run/store-forecast',
+        icon: 'nav-icon-bullet'
+      }
+    ]
+   
+  },
+  {
+    name: 'Search',
+    url: '/search',
+    iconComponent: { name: 'cil-speedometer' },
+  }      
 ];
