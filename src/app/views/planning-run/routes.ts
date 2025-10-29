@@ -32,7 +32,21 @@ export const routes: Routes = [
       data: {
         title: 'Cleanse History'
       }
-    }
+    },
+    {
+      path: 'classify-forecast-elements',
+      loadComponent: () => import('./classify-forecast-elements/classify-forecast-elements.component').then(m => m.ClassifyForecastElementsComponent),
+      data: {
+        title: 'Classify Forecast Elements'
+      }
+    },
+    // {
+    //   path: 'forecast-tuning',
+    //   loadComponent: () => import('./forecast-tuning/forecast-tuning.component').then(m => m.ForecastTuningComponent),
+    //   data: {
+    //     title: 'Forecast Tuning'
+    //   }
+    // }
     ]
   }
 ];

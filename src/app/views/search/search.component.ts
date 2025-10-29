@@ -1,210 +1,256 @@
-import { Component, OnInit, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { Component, OnInit, computed, signal, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { HttpClient } from '@angular/common/http';
-import { SearchService } from '../../services/search.service';
+import { HttpClient, HttpClientModule } from '@angular/common/http';
+import { firstValueFrom } from 'rxjs';
 
 type Domain = 'product' | 'channel' | 'location';
-type Op = 'AND' | 'OR';
+type AndOr = 'AND' | 'OR';
 
-interface FieldOption {
-  key: string;   // must match backend FIELD_MAP key
-  label: string; // user-friendly label
+interface FieldDef {
   domain: Domain;
+  key: string;   // must match backend FIELD_MAP keys (lowercase)
+  label: string; // UI label
 }
 
 interface Criterion {
-  key: string;     // e.g. "businessunit"
-  value: string;   // e.g. "Fast Food"
-  op?: Op;         // operator placed BEFORE this item (ignored for the first)
+  key: string;               // e.g. 'productid'
+  value: string;             // e.g. 'AztecWrap' or 'All'
+  op?: AndOr;                // AND/OR (undefined for first)
+  orValues?: string[];       // when value === 'All', concrete list to expand into OR
 }
 
 @Component({
-  selector: 'app-search',
   standalone: true,
-  imports: [CommonModule, FormsModule],
-  templateUrl: './search.component.html'
+  selector: 'app-search',
+  templateUrl: './search.component.html',
+  styleUrls: ['./search.component.scss'],
+  imports: [CommonModule, FormsModule, HttpClientModule]
 })
-export default class SearchComponent implements OnInit {
+export class SearchComponent implements OnInit {
+  // If you use a proxy, set API = '/api'
+  readonly API = 'http://127.0.0.1:8000/api';
+
+  // DI: never `new HttpClient()`
   private http = inject(HttpClient);
-  private svc = inject(SearchService);
 
-  // Absolute URL (your Option 1). If you use a dev proxy, you can switch to '/api'
-  private API = 'http://127.0.0.1:8000/api';
+  // --- Field catalog (align with backend FIELD_MAP keys) ---
+  fields: FieldDef[] = [
+    // product
+    { domain: 'product',  key: 'productid',               label: 'ProductID' },
+    { domain: 'product',  key: 'productdescr',            label: 'ProductDescr' },
+    { domain: 'product',  key: 'businessunit',            label: 'BusinessUnit' },
+    { domain: 'product',  key: 'isdailyforecastrequired', label: 'IsDailyForecastRequired' },
+    { domain: 'product',  key: 'isnew',                   label: 'IsNew' },
+    { domain: 'product',  key: 'productfamily',           label: 'ProductFamily' },
+    { domain: 'product',  key: 'productlevel',            label: 'ProductLevel' },
 
-  // Dropdown field choices
-  readonly fields: FieldOption[] = [
-    // Product
-    { key: 'productid', label: 'Product ID', domain: 'product' },
-    { key: 'productdescr', label: 'Product Description', domain: 'product' },
-    { key: 'businessunit', label: 'Business Unit', domain: 'product' },
-    { key: 'isdailyforecastrequired', label: 'Is Daily Forecast Required', domain: 'product' },
-    { key: 'isnew', label: 'Is New', domain: 'product' },
-    { key: 'productfamily', label: 'Product Family', domain: 'product' },
-    { key: 'productlevel', label: 'Product Level', domain: 'product' },
+    // channel
+    { domain: 'channel',  key: 'channelid',               label: 'ChannelID' },
+    { domain: 'channel',  key: 'channeldescr',            label: 'ChannelDescr' },
+    { domain: 'channel',  key: 'channellevel',            label: 'ChannelLevel' },
 
-    // Channel
-    { key: 'channelid', label: 'Channel ID', domain: 'channel' },
-    { key: 'channeldescr', label: 'Channel Description', domain: 'channel' },
-    { key: 'channellevel', label: 'Channel Level', domain: 'channel' },
-
-    // Location
-    { key: 'locationid', label: 'Location ID', domain: 'location' },
-    { key: 'locationdescr', label: 'Location Description', domain: 'location' },
-    { key: 'locationlevel', label: 'Location Level', domain: 'location' },
-    { key: 'geography', label: 'Geography', domain: 'location' },
+    // location
+    { domain: 'location', key: 'locationid',              label: 'LocationID' },
+    { domain: 'location', key: 'locationdescr',           label: 'LocationDescr' },
+    { domain: 'location', key: 'locationlevel',           label: 'LocationLevel' },
+    { domain: 'location', key: 'geography',               label: 'Geography' },
   ];
 
-  // UI state
+  // --- UI state (signals) ---
   domain = signal<Domain>('product');
-  fieldKey = signal<string>('businessunit');
-  fieldValues = signal<string[]>([]);
-  selectedValue = signal<string>('');
-  nextOp = signal<Op>('AND');
-
-  // Built criteria
+  fieldKey = signal<string>('productid');
+  selectedValue = signal<string>('All');
+  nextOp = signal<AndOr>('AND');
   criteria = signal<Criterion[]>([]);
-
-  // Save
   saveName = signal<string>('');
-  saving = signal(false);
+
+  // value options for the current field
+  private currentValues = signal<string[]>([]);
+  // cache of options per field key (used to expand "All")
+  private optionsCache = new Map<string, string[]>();
+
+  saving = signal<boolean>(false);
+  savedOk = signal<boolean>(false);
   error = signal<string | null>(null);
-  savedOk = signal(false);
 
-  // Source data for values
-  products: any[] = [];
-  channels: any[] = [];
-  locations: any[] = [];
-
-  ngOnInit() {
-    // load values for dropdowns
-    this.http.get<any[]>(`${this.API}/products`).subscribe(p => { this.products = p; this.refreshFieldValues(); });
-    this.http.get<any[]>(`${this.API}/channels`).subscribe(c => { this.channels = c; this.refreshFieldValues(); });
-    this.http.get<any[]>(`${this.API}/locations`).subscribe(l => { this.locations = l; this.refreshFieldValues(); });
+  ngOnInit(): void {
+    void this.loadOptionsForField(this.fieldKey());
   }
 
-  onDomainChange(newDom: Domain) {
-    this.domain.set(newDom);
-    const firstField = this.fields.find(f => f.domain === newDom)?.key ?? '';
-    this.fieldKey.set(firstField);
-    this.refreshFieldValues();
+  // --- Derived lists ---
+  fieldValues = computed(() => this.currentValues());
+
+  // --- UI handlers ---
+  async onDomainChange(dom: Domain) {
+    this.domain.set(dom);
+    const firstForDomain = this.fields.find(f => f.domain === dom)?.key || 'productid';
+    this.fieldKey.set(firstForDomain);
+    await this.loadOptionsForField(firstForDomain);
   }
 
-  onFieldChange(newKey: string) {
-    this.fieldKey.set(newKey);
-    this.refreshFieldValues();
+  async onFieldChange(key: string) {
+    this.fieldKey.set(key);
+    await this.loadOptionsForField(key);
   }
 
-  refreshFieldValues() {
+  /** Add the current criterion; expand "All" to OR list using cached values. */
+  async addCriterion() {
     const key = this.fieldKey();
-    const dom = this.domain();
-    const uniq = new Set<string>();
+    const value = this.selectedValue();
+    const list = await this.ensureOptionsCache(key); // concrete values for expansion
 
-    const push = (v: any) => {
-      if (v === null || v === undefined) return;
-      const s = String(v);
-      if (s.trim().length) uniq.add(s);
+    const crit: Criterion = {
+      key,
+      value,
+      op: this.criteria().length ? this.nextOp() : undefined,
+      orValues: value === 'All' ? list.slice() : undefined,
     };
 
-    const fromProducts = () => {
-      for (const r of this.products) {
-        switch (key) {
-          case 'productid': push(r.ProductID); break;
-          case 'productdescr': push(r.ProductDescr); break;
-          case 'businessunit': push(r.BusinessUnit); break;
-          case 'isdailyforecastrequired': push(r.IsDailyForecastRequired); break;
-          case 'isnew': push(r.IsNew); break;
-          case 'productfamily': push(r.ProductFamily); break;
-          case 'productlevel': push(r.Level); break;
-        }
-      }
-    };
-
-    const fromChannels = () => {
-      for (const r of this.channels) {
-        switch (key) {
-          case 'channelid': push(r.ChannelID); break;
-          case 'channeldescr': push(r.ChannelDescr); break;
-          case 'channellevel': push(r.Level); break;
-        }
-      }
-    };
-
-    const fromLocations = () => {
-      for (const r of this.locations) {
-        switch (key) {
-          case 'locationid': push(r.LocationID); break;
-          case 'locationdescr': push(r.LocationDescr); break; // aliased in your API
-          case 'locationlevel': push(r.Level); break;
-          case 'geography': push(r.Geography); break;
-        }
-      }
-    };
-
-    if (dom === 'product') fromProducts();
-    if (dom === 'channel') fromChannels();
-    if (dom === 'location') fromLocations();
-
-    const arr = Array.from(uniq).sort((a, b) => a.localeCompare(b));
-    this.fieldValues.set(arr);
-    this.selectedValue.set(arr[0] ?? '');
-  }
-
-  addCriterion() {
-    const key = this.fieldKey();
-    const value = this.selectedValue().trim();
-    if (!key || !value) return;
-
-    const exists = this.criteria().some(c => c.key === key && c.value === value);
-    if (!exists) {
-      const op = this.nextOp(); // operator to place BEFORE this new criterion
-      this.criteria.update(list => [...list, { key, value, op }]);
-    }
+    this.criteria.update(arr => [...arr, crit]);
+    this.nextOp.set('AND');
   }
 
   removeCriterion(i: number) {
-    this.criteria.update(list => list.filter((_, idx) => idx !== i));
+    this.criteria.update(arr => arr.filter((_, idx) => idx !== i));
   }
 
-  setOp(i: number, op: Op) {
-    this.criteria.update(list => list.map((c, idx) => (idx === i ? { ...c, op } : c)));
-  }
-
-  private quoteIfNeeded(v: string): string {
-    return /[\s:"]/g.test(v) ? `"${v.replace(/"/g, '\\"')}"` : v;
-  }
-
-  // Compose query with operators
-  builtQuery = computed(() => {
-    const parts: string[] = [];
-    const cs = this.criteria();
-    cs.forEach((c, i) => {
-      const token = `${c.key}:${this.quoteIfNeeded(c.value)}`;
-      if (i === 0) parts.push(token);
-      else parts.push((c.op ?? 'AND').toUpperCase(), token);
+  setOp(i: number, op: AndOr) {
+    this.criteria.update(arr => {
+      const copy = arr.slice();
+      if (i > 0) copy[i] = { ...copy[i], op };
+      return copy;
     });
-    return parts.join(' ');
-  });
+  }
 
+  // --- Query builder ---
+  builtQuery(): string {
+    const items = this.criteria();
+    if (!items.length) return '';
+
+    const parts: string[] = [];
+    items.forEach((c, idx) => {
+      const prefix = idx === 0 ? '' : ` ${c.op ?? 'AND'} `;
+      const expr = this.buildExpr(c);
+      parts.push(prefix + expr);
+    });
+    return parts.join('');
+  }
+
+  /** Create the expression for a single criterion, expanding All -> OR(...) */
+  private buildExpr(c: Criterion): string {
+    const quoteIfNeeded = (v: string) => (/\s/.test(v) ? `"${v}"` : v);
+
+    if (c.value === 'All') {
+      const vals = (c.orValues ?? []).filter(v => v && v !== 'All');
+      if (!vals.length) return `${c.key}:*`;
+      const ors = vals.map(v => `${c.key}:${quoteIfNeeded(v)}`).join(' OR ');
+      return `(${ors})`;
+    }
+    return `${c.key}:${quoteIfNeeded(c.value)}`;
+  }
+
+  // --- Save query to backend ---
   async save() {
     this.error.set(null);
     this.savedOk.set(false);
-    const name = this.saveName().trim();
-    const query = this.builtQuery().trim();
 
-    if (!name) { this.error.set('Please enter a name.'); return; }
-    if (!query) { this.error.set('Please add at least one criterion.'); return; }
+    const name = (this.saveName() || '').trim();
+    const query = (this.builtQuery() || '').trim();
+
+    if (!name) {
+      this.error.set('Please provide a name for this search.');
+      return;
+    }
+    if (!query) {
+      this.error.set('Please add at least one criterion.');
+      return;
+    }
 
     this.saving.set(true);
     try {
-      await this.svc.save({ name, query }).toPromise();
+      await firstValueFrom(this.http.post(`${this.API}/saved-searches`, { name, query }));
       this.savedOk.set(true);
-      // Optionally clear after save:
-      // this.criteria.set([]); this.saveName.set('');
     } catch (e: any) {
-      this.error.set(e?.error?.detail || e?.message || 'Save failed');
+      this.error.set(e?.error?.detail || e?.message || 'Failed to save the query.');
     } finally {
       this.saving.set(false);
     }
+  }
+
+  // --- Helpers: load options for a field & maintain cache ---
+  private async loadOptionsForField(key: string) {
+    const vals = await this.ensureOptionsCache(key);
+    const withAll = ['All', ...vals];
+    this.currentValues.set(withAll);
+
+    const current = this.selectedValue();
+    if (!withAll.includes(current)) {
+      this.selectedValue.set('All');
+    }
+  }
+
+  private async ensureOptionsCache(key: string): Promise<string[]> {
+    if (this.optionsCache.has(key)) {
+      return this.optionsCache.get(key)!;
+    }
+    const vals = await this.fetchValuesForKey(key);
+    this.optionsCache.set(key, vals);
+    return vals;
+  }
+
+  /** Fetch distinct values for a given field key from appropriate endpoint. */
+  private async fetchValuesForKey(key: string): Promise<string[]> {
+    try {
+      if (key.startsWith('product')) {
+        const rows = await firstValueFrom(this.http.get<any[]>(`${this.API}/products`));
+        return this.distinctSorted(rows.map(r => this.pickProductField(key, r)));
+      }
+      if (key.startsWith('channel')) {
+        const rows = await firstValueFrom(this.http.get<any[]>(`${this.API}/channels`));
+        return this.distinctSorted(rows.map(r => this.pickChannelField(key, r)));
+      }
+      // location*
+      const rows = await firstValueFrom(this.http.get<any[]>(`${this.API}/locations`));
+      return this.distinctSorted(rows.map(r => this.pickLocationField(key, r)));
+    } catch {
+      return [];
+    }
+  }
+
+  private pickProductField(key: string, r: any): string {
+    switch (key) {
+      case 'productid':               return String(r.ProductID ?? '');
+      case 'productdescr':            return String(r.ProductDescr ?? '');
+      case 'businessunit':            return String(r.BusinessUnit ?? '');
+      case 'isdailyforecastrequired': return String(r.IsDailyForecastRequired ?? '');
+      case 'isnew':                   return String(r.IsNew ?? '');
+      case 'productfamily':           return String(r.ProductFamily ?? '');
+      case 'productlevel':            return String(r.Level ?? '');
+      default:                        return '';
+    }
+  }
+
+  private pickChannelField(key: string, r: any): string {
+    switch (key) {
+      case 'channelid':    return String(r.ChannelID ?? '');
+      case 'channeldescr': return String(r.ChannelDescr ?? '');
+      case 'channellevel': return String(r.Level ?? '');
+      default:             return '';
+    }
+  }
+
+  private pickLocationField(key: string, r: any): string {
+    switch (key) {
+      case 'locationid':    return String(r.LocationID ?? '');
+      case 'locationdescr': return String(r.LocationDescr ?? '');
+      case 'locationlevel': return String(r.Level ?? '');
+      case 'geography':     return String(r.Geography ?? '');
+      default:              return '';
+    }
+  }
+
+  private distinctSorted(arr: string[]): string[] {
+    return Array.from(new Set(arr.filter(Boolean))).sort((a, b) => a.localeCompare(b));
   }
 }

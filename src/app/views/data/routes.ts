@@ -13,31 +13,17 @@ export const routes: Routes = [
         pathMatch: 'full'
       },
       {
-        path: 'history',
-        loadComponent: () => import('./history/history.component').then(m => m.HistoryComponent),
+        path: 'product',
+        loadComponent: () => import('../data/product/product.component').then(m => m.ProductComponent),
         data: {
-          title: 'History'
+          title: 'Product'
         }
-      },
+      },      
       {
         path: 'channel',
         loadComponent: () => import('./channel/channel.component').then(m => m.ChannelComponent),
         data: {
           title: 'Channel'
-        }
-      },
-      {
-        path: 'forecast-element',
-        loadComponent: () => import('../data/forecast-element/forecast-element.component').then(m => m.ForecastElementComponent),
-        data: {
-          title: 'Forecast Element'
-        }
-      },
-      {
-        path: 'product',
-        loadComponent: () => import('../data/product/product.component').then(m => m.ProductComponent),
-        data: {
-          title: 'Product'
         }
       },
       {
@@ -48,6 +34,27 @@ export const routes: Routes = [
         }
       },
       {
+        path: 'history',
+        loadComponent: () => import('./history/history.component').then(m => m.HistoryComponent),
+        data: {
+          title: 'History'
+        }
+      },      
+      {
+        path: 'forecast-element',
+        loadComponent: () => import('../data/forecast-element/forecast-element.component').then(m => m.ForecastElementComponent),
+        data: {
+          title: 'Forecast Element'
+        }
+      },
+      {
+        path: 'classified-forecast-elements',
+        loadComponent: () => import('./classified-forecast-elements/classified-forecast-elements.component').then(m => m.ClassifiedForecastElementsComponent),
+        data: {
+          title: 'Classified Forecast Elements'
+        }
+      },      
+      {
         path: 'forecast',
         loadComponent: () => import('../data/forecast/forecast.component').then(m => m.ForecastComponent),
         data: {
@@ -55,12 +62,12 @@ export const routes: Routes = [
         }
       },
       {
-        path: 'history',
-        loadComponent: () => import('../data/history/history.component').then(m => m.HistoryComponent),
+        path: 'kpi',
+        loadComponent: () => import('../data/kpi/kpi.component').then(m => m.KPIComponent),
         data: {
-          title: 'History'
+          title: 'KPI'
         }
-      }             
+      }                  
     ]
   }
 ];

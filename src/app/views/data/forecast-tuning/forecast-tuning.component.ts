@@ -103,7 +103,7 @@ export class ForecastTuningComponent implements OnInit, OnDestroy {
     forecastQuery:  '#10b981', // green
   };
 
-   // Put this inside the ForecastTuningComponent class
+  // Defaults per period (used by the button)
   setDefaultsForPeriod(p: 'Daily' | 'Weekly' | 'Monthly') {
     if (p === 'Daily') {
       this.lagCtrl.setValue(14);
@@ -114,24 +114,23 @@ export class ForecastTuningComponent implements OnInit, OnDestroy {
         two_stage: false
       });
     } else if (p === 'Weekly') {
-    this.lagCtrl.setValue(13);
-    this.xgbFeaturesForm.patchValue({
-      seasonal_lags: '52',
-      rolling_windows: '4,13',
-      use_log1p: true,
-      two_stage: false
-    });
-  } else {
-    this.lagCtrl.setValue(6);
-    this.xgbFeaturesForm.patchValue({
-      seasonal_lags: '12,24',
-      rolling_windows: '3,6',
-      use_log1p: true,
-      two_stage: false
-    });
+      this.lagCtrl.setValue(13);
+      this.xgbFeaturesForm.patchValue({
+        seasonal_lags: '52',
+        rolling_windows: '4,13',
+        use_log1p: true,
+        two_stage: false
+      });
+    } else {
+      this.lagCtrl.setValue(6);
+      this.xgbFeaturesForm.patchValue({
+        seasonal_lags: '12,24',
+        rolling_windows: '3,6',
+        use_log1p: true,
+        two_stage: false
+      });
+    }
   }
-}
-
 
   // translucent helper
   private hexA(hex: string, a = 0.15) {
@@ -211,6 +210,41 @@ export class ForecastTuningComponent implements OnInit, OnDestroy {
     } finally { this.loading = false; }
   }
 
+  // --- PLOTS (Monthly batch script outputs) ---
+  private safeKey(pid: string, cid: string, lid: string): string {
+    // matches safe_key() in your Python: keep spaces, replace illegal file chars with "_"
+    const raw = `${pid} | ${cid} | ${lid}`;
+    return raw.replace(/[\\/*?:"<>|]+/g, "_").replace(/\s+/g, " ").trim();
+  }
+
+  plotUrlBacktestForCurrent(): string | null {
+    const k = this.requireKey(); if (!k) return null;
+    const sk = this.safeKey(k.ProductID, k.ChannelID, k.LocationID);
+    const path = `backtest/backtest_${sk}.png`;
+    return `http://127.0.0.1:8000/plots/${encodeURIComponent(path)}?t=${Date.now()}`;
+  }
+
+  plotUrlHistoryForecastForCurrent(): string | null {
+    const k = this.requireKey(); if (!k) return null;
+    const sk = this.safeKey(k.ProductID, k.ChannelID, k.LocationID);
+    const path = `history_plus_forecast/history_forecast_${sk}.png`;
+    return `http://127.0.0.1:8000/plots/${encodeURIComponent(path)}?t=${Date.now()}`;
+  }
+
+  // Optional: trigger the monthly batch script from UI so plots/CSVs are generated
+  async runMonthlyBatchOnce() {
+    this.loading = true; this.errorMessage = null;
+    try {
+      await firstValueFrom(this.http.post(`${this.API}/batch/monthly/run`, {}));
+      // After it finishes, the <img> tags will display via the URLs above.
+    } catch (e: any) {
+      console.error(e);
+      this.errorMessage = e?.error?.detail || 'Batch run failed.';
+    } finally {
+      this.loading = false;
+    }
+  }
+
   private async loadSavedSearches() {
     try {
       const list = await firstValueFrom(this.http.get<ISaved[]>(`${this.API}/saved-searches`));
@@ -271,7 +305,6 @@ export class ForecastTuningComponent implements OnInit, OnDestroy {
       const base = hist?.length ? hist : fc!;
       const baseColor = hist?.length ? this.COLORS.history : this.COLORS.forecastSaved;
 
-      // Draw base series in appropriate color
       this.drawChart(
         base.map(s => s.StartDate),
         base.map(s => s.Qty),
@@ -279,7 +312,6 @@ export class ForecastTuningComponent implements OnInit, OnDestroy {
         baseColor
       );
 
-      // If both exist, overlay saved forecast in red
       if (hist?.length && fc?.length) {
         this.addDatasetAlignedStyled(
           fc.map(s => s.StartDate),
@@ -437,18 +469,17 @@ export class ForecastTuningComponent implements OnInit, OnDestroy {
     } catch (e) {
       console.error(e);
       this.errorMessage = 'Tune failed.';
-    } finally { this.loading = false; }
+    } finally {
+      this.loading = false;
+    }
   }
 
   applyBestFromTune() {
     const b = this.tuneResult?.best; if (!b) return;
 
     const currParams = this.xgbParamsForm.value as Record<string, any>;
-
-    // lag
     this.lagCtrl.setValue(b.lag);
 
-    // params
     this.xgbParamsForm.patchValue({
       n_estimators:      b.params?.['n_estimators']      ?? currParams['n_estimators'],
       learning_rate:     b.params?.['learning_rate']     ?? currParams['learning_rate'],
@@ -461,14 +492,13 @@ export class ForecastTuningComponent implements OnInit, OnDestroy {
       gamma:             b.params?.['gamma']             ?? currParams['gamma'],
     });
 
-    // features (serialize arrays as CSV)
     const toCsv = (a: any) => Array.isArray(a) ? a.join(',') : '';
     this.xgbFeaturesForm.patchValue({
-      seasonal_lags:       toCsv(b.features?.['seasonal_lags']),
-      rolling_windows:     toCsv(b.features?.['rolling_windows']),
-      use_log1p:         !!(b.features?.['use_log1p']),
-      two_stage:         !!(b.features?.['two_stage']),
-      zero_prob_threshold: b.features?.['zero_prob_threshold'] ?? (this.xgbFeaturesForm.value as any)['zero_prob_threshold']
+      seasonal_lags:         toCsv(b.features?.['seasonal_lags']),
+      rolling_windows:       toCsv(b.features?.['rolling_windows']),
+      use_log1p:           !!(b.features?.['use_log1p']),
+      two_stage:           !!(b.features?.['two_stage']),
+      zero_prob_threshold:   b.features?.['zero_prob_threshold'] ?? (this.xgbFeaturesForm.value as any)['zero_prob_threshold']
     });
   }
 
@@ -534,7 +564,7 @@ export class ForecastTuningComponent implements OnInit, OnDestroy {
     const min = nums.length ? Math.min(...nums) : 0;
     const max = nums.length ? Math.max(...nums) : 1;
     if (max === min) { return { min: Math.max(0, min - 1), max: max + 1 }; }
-    const pad = 0.08 * (max - min); // 8% headroom
+    const pad = 0.08 * (max - min);
     return { min: Math.max(0, min - pad), max: max + pad };
   }
 
@@ -549,7 +579,6 @@ export class ForecastTuningComponent implements OnInit, OnDestroy {
     return this.computeYScale(dsVals);
   }
 
-  // Aligns all datasets to the union of labels so overlays don’t shift
   private addDatasetAlignedStyled(
     newLabels: string[],
     newValues: number[],
@@ -560,7 +589,7 @@ export class ForecastTuningComponent implements OnInit, OnDestroy {
 
     const currentLabels = (this.chart.data.labels as string[]) || [];
     const mergedSet = new Set<string>([...currentLabels, ...newLabels]);
-    const mergedLabels = Array.from(mergedSet).sort(); // ISO strings sort chronologically
+    const mergedLabels = Array.from(mergedSet).sort();
 
     const mapTo = (labels: string[], values: number[], all: string[]) => {
       const idx = new Map(labels.map((l, i) => [l, i]));
@@ -587,14 +616,12 @@ export class ForecastTuningComponent implements OnInit, OnDestroy {
       ...style
     });
 
-    // Recompute dynamic y scale from all datasets
     const yScale = this.yScaleFromAllDatasets();
     (this.chart.options.scales as any).y = yScale;
 
     this.chart.update();
   }
 
-  // --------- helpers to call the forecast-series API ----------
   private async fetchForecastSeries(bucket: 'daily'|'weekly'|'monthly', q: string) {
     const params = new HttpParams().set('q', q).set('max_points', '800');
     return firstValueFrom(this.http.get<ISeriesPoint[]>(`${this.API}/forecast/${bucket}-series-by-query`, { params }));
@@ -634,6 +661,8 @@ export class ForecastTuningComponent implements OnInit, OnDestroy {
     } catch (e) {
       console.error(e);
       this.errorMessage = 'Failed to run forecast for this query.';
-    } finally { this.loading = false; }
+    } finally {
+      this.loading = false;
+    }
   }
 }

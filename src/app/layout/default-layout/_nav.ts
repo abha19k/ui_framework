@@ -16,28 +16,13 @@ export const navItems: INavData[] = [
     iconComponent: { name: 'cil-speedometer' },
     children: [
       {
+        name: 'Product',
+        url: '/data/product',
+        icon: 'nav-icon-bullet'
+      },
+      {
         name: 'Channel',
         url: '/data/channel',
-        icon: 'nav-icon-bullet'
-      },
-      {
-        name: 'Forecast Element',
-        url: '/data/forecast-element',
-        icon: 'nav-icon-bullet'
-      },
-      {
-        name: 'Forecast',
-        url: '/data/forecast',
-        icon: 'nav-icon-bullet'
-      },
-      {
-        name: 'Global Parameters',
-        url: '/data/global-parameters',
-        icon: 'nav-icon-bullet'
-      },
-      {
-        name: 'History',
-        url: '/data/history',
         icon: 'nav-icon-bullet'
       },
       {
@@ -46,8 +31,33 @@ export const navItems: INavData[] = [
         icon: 'nav-icon-bullet'
       },
       {
-        name: 'Product',
-        url: '/data/product',
+        name: 'History',
+        url: '/data/history',
+        icon: 'nav-icon-bullet'
+      },
+      {
+        name: 'Forecast Element',
+        url: '/data/forecast-element',
+        icon: 'nav-icon-bullet'
+      },
+      {
+        name: 'Classified Forecast Elements',
+        url: '/data/classified-forecast-elements',
+        icon: 'nav-icon-bullet'
+      },
+      {
+        name: 'Forecast',
+        url: '/data/forecast',
+        icon: 'nav-icon-bullet'
+      },
+      {
+        name: 'KPI',
+        url: '/data/kpi',
+        icon: 'nav-icon-bullet'
+      },      
+      {
+        name: 'Global Parameters',
+        url: '/data/global-parameters',
         icon: 'nav-icon-bullet'
       }
     ]
@@ -85,8 +95,8 @@ export const navItems: INavData[] = [
         icon: 'nav-icon-bullet'
       },
       {
-        name: 'Forecast Tuning',
-        url: '/planning-run/store-forecast',
+        name: 'Classify Forecast Elements',
+        url: '/planning-run/classify-forecast-elements',
         icon: 'nav-icon-bullet'
       }
     ]

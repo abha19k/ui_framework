@@ -150,7 +150,7 @@
   <c-card-body>
     <div *ngIf="errorMessage" class="text-danger mb-2">{{ errorMessage }}</div>
 
-    <!-- Chart legend (matches TS colors & line styles) -->
+    <!-- Chart legend -->
     <div class="d-flex flex-wrap align-items-center gap-4 small text-muted mb-2">
       <span class="d-inline-flex align-items-center gap-2">
         <span style="display:inline-block;width:28px;height:0;border-top:3px solid #2563eb;border-radius:2px;"></span>
@@ -212,5 +212,45 @@
         </tbody>
       </table>
     </div>
+
+    <hr class="my-3" />
+
+    <!-- 18M Batch Plots -->
+    <div class="d-flex flex-wrap gap-2 mb-2">
+      <button cButton color="dark" (click)="runMonthlyBatchOnce()" [disabled]="loading">
+        Generate/Refresh 18M Plots
+      </button>
+      <button cButton color="secondary" (click)="updatePlot()" [disabled]="loading">
+        Refresh Above Data
+      </button>
+    </div>
+
+    <div class="row g-3">
+      <div class="col-12 col-lg-6">
+        <h6 class="mb-2">Backtest (Batch 18M)</h6>
+        <ng-container *ngIf="plotUrlBacktestForCurrent() as backUrl; else noPlots">
+          <img [src]="backUrl" alt="Backtest plot" class="img-fluid border rounded">
+          <div class="mt-1">
+            <a [href]="backUrl" target="_blank" rel="noopener">Open in new tab</a>
+          </div>
+        </ng-container>
+      </div>
+
+      <div class="col-12 col-lg-6">
+        <h6 class="mb-2">History + Forecast (Batch 18M)</h6>
+        <ng-container *ngIf="plotUrlHistoryForecastForCurrent() as histUrl; else noPlots">
+          <img [src]="histUrl" alt="History+Forecast plot" class="img-fluid border rounded">
+          <div class="mt-1">
+            <a [href]="histUrl" target="_blank" rel="noopener">Open in new tab</a>
+          </div>
+        </ng-container>
+      </div>
+    </div>
+
+    <ng-template #noPlots>
+      <div class="text-muted small">
+        Pick ProductID / ChannelID / LocationID above. Then click <em>Generate/Refresh 18M Plots</em>.
+      </div>
+    </ng-template>
   </c-card-body>
 </c-card>

@@ -1,7 +1,9 @@
 import { Routes } from '@angular/router';
-import SearchComponent from './search.component';
-
 
 export const routes: Routes = [
-{ path: '', component: SearchComponent },
+  {
+    path: '',
+    loadComponent: () =>
+      import('./search.component').then(m => m.SearchComponent) // named export
+  }
 ];
