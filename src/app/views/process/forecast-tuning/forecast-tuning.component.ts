@@ -29,8 +29,8 @@ interface ITuneResult {
 @Component({
   standalone: true,
   selector: 'app-forecast-tuning',
-  templateUrl: 'forecast-tuning.component.html',
-  styleUrls: ['forecast-tuning.component.scss'],
+  templateUrl: './forecast-tuning.component.html',
+  styleUrls: ['./forecast-tuning.component.scss'],
   imports: [
     CommonModule, ReactiveFormsModule, HttpClientModule,
     TextColorDirective, CardComponent, CardBodyComponent, CardHeaderComponent, CardFooterComponent,
@@ -45,7 +45,7 @@ export class ForecastTuningComponent implements OnInit, OnDestroy {
   productIdCtrl = new FormControl<string>('');
   channelIdCtrl = new FormControl<string>('');
   locationIdCtrl = new FormControl<string>('');
-  periodSelection = new FormControl<'Daily' | 'Weekly' | 'Monthly'>('Daily');
+  periodSelection = new FormControl<'Daily' | 'Weekly' | 'Monthly'>('Monthly');
 
   // ---------- Saved searches (query mode) ----------
   savedSearches: ISaved[] = [];
@@ -54,8 +54,8 @@ export class ForecastTuningComponent implements OnInit, OnDestroy {
   newSavedName = new FormControl<string>('');
 
   // ---------- Tuning ----------
-  lagCtrl = new FormControl<number>(3);
-  horizonCtrl = new FormControl<number>(12);
+  lagCtrl = new FormControl<number>(6);
+  horizonCtrl = new FormControl<number>(18);
   foldsCtrl = new FormControl<number>(3);
   useCleansedCtrl = new FormControl<boolean>(false);
 
@@ -66,15 +66,14 @@ export class ForecastTuningComponent implements OnInit, OnDestroy {
     subsample:           new FormControl<number | null>(0.9),
     colsample_bytree:    new FormControl<number | null>(0.8),
     reg_lambda:          new FormControl<number | null>(1.0),
-    // optional extras (leave null to omit)
     reg_alpha:           new FormControl<number | null>(null),
     min_child_weight:    new FormControl<number | null>(null),
     gamma:               new FormControl<number | null>(null),
   });
 
   xgbFeaturesForm = new FormGroup({
-    seasonal_lags:       new FormControl<string>(''),
-    rolling_windows:     new FormControl<string>(''),
+    seasonal_lags:       new FormControl<string>('12,24'),
+    rolling_windows:     new FormControl<string>('3,6'),
     use_log1p:           new FormControl<boolean>(true),
     two_stage:           new FormControl<boolean>(false),
     zero_prob_threshold: new FormControl<number | null>(0.5),
@@ -90,6 +89,7 @@ export class ForecastTuningComponent implements OnInit, OnDestroy {
   errorMessage: string | null = null;
   metrics: Record<string, number> | null = null;
   tuneResult: ITuneResult | null = null;
+  selectedModel: string | null = null;
 
   // ---------- Chart ----------
   @ViewChild('chartCanvas') chartCanvas!: ElementRef<HTMLCanvasElement>;
@@ -97,16 +97,17 @@ export class ForecastTuningComponent implements OnInit, OnDestroy {
 
   // ---------- Colors ----------
   private readonly COLORS = {
-    history:        '#2563eb', // blue
-    forecastSaved:  '#ef4444', // red
-    forecastKey:    '#f59e0b', // amber
-    forecastQuery:  '#10b981', // green
+    history:       '#2563eb', // blue
+    forecastKey:   '#10b981', // green
+    forecastQuery: '#f59e0b', // amber
   };
 
-   // Put this inside the ForecastTuningComponent class
+  // === Default hyperparams / horizons per period ============================
   setDefaultsForPeriod(p: 'Daily' | 'Weekly' | 'Monthly') {
     if (p === 'Daily') {
       this.lagCtrl.setValue(14);
+      this.horizonCtrl.setValue(7);   // next 7 days
+      this.foldsCtrl.setValue(3);
       this.xgbFeaturesForm.patchValue({
         seasonal_lags: '7,14,28',
         rolling_windows: '7,28',
@@ -114,26 +115,28 @@ export class ForecastTuningComponent implements OnInit, OnDestroy {
         two_stage: false
       });
     } else if (p === 'Weekly') {
-    this.lagCtrl.setValue(13);
-    this.xgbFeaturesForm.patchValue({
-      seasonal_lags: '52',
-      rolling_windows: '4,13',
-      use_log1p: true,
-      two_stage: false
-    });
-  } else {
-    this.lagCtrl.setValue(6);
-    this.xgbFeaturesForm.patchValue({
-      seasonal_lags: '12,24',
-      rolling_windows: '3,6',
-      use_log1p: true,
-      two_stage: false
-    });
+      this.lagCtrl.setValue(13);
+      this.horizonCtrl.setValue(13);  // next 13 weeks
+      this.foldsCtrl.setValue(3);
+      this.xgbFeaturesForm.patchValue({
+        seasonal_lags: '52',
+        rolling_windows: '4,13',
+        use_log1p: true,
+        two_stage: false
+      });
+    } else {
+      this.lagCtrl.setValue(6);
+      this.horizonCtrl.setValue(18);  // next 18 months
+      this.foldsCtrl.setValue(3);
+      this.xgbFeaturesForm.patchValue({
+        seasonal_lags: '12,24',
+        rolling_windows: '3,6',
+        use_log1p: true,
+        two_stage: false
+      });
+    }
   }
-}
 
-
-  // translucent helper
   private hexA(hex: string, a = 0.15) {
     const h = hex.replace('#','');
     const n = parseInt(h, 16);
@@ -147,34 +150,8 @@ export class ForecastTuningComponent implements OnInit, OnDestroy {
   }
   ngOnDestroy(): void { this.destroyChart(); }
 
-  // ---------------- Helpers ----------------
   private uniqSort(arr: string[]): string[] {
     return Array.from(new Set(arr)).sort((a, b) => String(a).localeCompare(String(b)));
-  }
-
-  private paramsValue(): any {
-    const v = this.xgbParamsForm.value as Record<string, any>;
-    return Object.fromEntries(Object.entries(v).filter(([, val]) => val !== null && val !== undefined));
-  }
-
-  private featuresValue(periodSlug: 'daily'|'weekly'|'monthly'): any {
-    const v = this.xgbFeaturesForm.value as Record<string, any>;
-    const parseNums = (s?: string | null) =>
-      (s ?? '').split(',').map(x => x.trim()).filter(Boolean).map(Number).filter(n => !Number.isNaN(n));
-    const defaults = periodSlug === 'daily'
-      ? { seasonal_lags:[7,14,28], rolling_windows:[7,28] }
-      : periodSlug === 'weekly'
-      ? { seasonal_lags:[52], rolling_windows:[4,13] }
-      : { seasonal_lags:[12,24], rolling_windows:[3,6] };
-    const seasonal = parseNums(v['seasonal_lags']);
-    const rolling  = parseNums(v['rolling_windows']);
-    return {
-      seasonal_lags: seasonal.length ? seasonal : defaults.seasonal_lags,
-      rolling_windows: rolling.length ? rolling : defaults.rolling_windows,
-      use_log1p: !!v['use_log1p'],
-      two_stage: !!v['two_stage'],
-      zero_prob_threshold: (v['zero_prob_threshold'] ?? 0.5),
-    };
   }
 
   private periodSlug(): 'daily'|'weekly'|'monthly' {
@@ -193,7 +170,6 @@ export class ForecastTuningComponent implements OnInit, OnDestroy {
     return tokens.join(' ');
   }
 
-  // ---------------- Data loading ----------------
   private async loadDropdownOptions() {
     this.loading = true; this.errorMessage = null;
     try {
@@ -244,7 +220,7 @@ export class ForecastTuningComponent implements OnInit, OnDestroy {
     } finally { this.loading = false; }
   }
 
-  // ---------------- History + Forecast (single-key) ----------------
+  // ---------------- History (single-key/chart) — NO saved forecast overlay ----------------
   async updatePlot() {
     this.errorMessage = null;
     const q = this.buildQueryFromFilters();
@@ -259,49 +235,25 @@ export class ForecastTuningComponent implements OnInit, OnDestroy {
 
     this.loading = true;
     try {
-      const [hist, fc] = await Promise.all([
-        firstValueFrom(this.http.get<ISeriesPoint[]>(`${this.API}/history/${bucket}-series-by-query`, { params })),
-        this.fetchForecastSeries(bucket, q),
-      ]);
-
-      if (!hist?.length && !fc?.length) {
-        this.errorMessage = 'No data for this selection.'; this.destroyChart(); return;
-      }
-
-      const base = hist?.length ? hist : fc!;
-      const baseColor = hist?.length ? this.COLORS.history : this.COLORS.forecastSaved;
-
-      // Draw base series in appropriate color
-      this.drawChart(
-        base.map(s => s.StartDate),
-        base.map(s => s.Qty),
-        hist?.length ? 'History (Key)' : 'Forecast (Saved, Key)',
-        baseColor
+      const hist = await firstValueFrom(
+        this.http.get<ISeriesPoint[]>(`${this.API}/history/${bucket}-series-by-query`, { params })
       );
+      if (!hist?.length) { this.errorMessage = 'No history for this selection.'; this.destroyChart(); return; }
 
-      // If both exist, overlay saved forecast in red
-      if (hist?.length && fc?.length) {
-        this.addDatasetAlignedStyled(
-          fc.map(s => s.StartDate),
-          fc.map(s => s.Qty),
-          'Forecast (Saved, Key)',
-          {
-            borderDash: [6, 3],
-            pointRadius: 1,
-            borderColor: this.COLORS.forecastSaved,
-            backgroundColor: this.COLORS.forecastSaved,
-            pointBackgroundColor: this.COLORS.forecastSaved,
-          }
-        );
-      }
+      this.drawChart(
+        hist.map(s => s.StartDate),      // full ISO, let ticks format it
+        hist.map(s => s.Qty),
+        'History (Key)',
+        this.COLORS.history
+      );
     } catch (err) {
       console.error(err);
-      this.errorMessage = 'Failed to load series.';
+      this.errorMessage = 'Failed to load history.';
       this.destroyChart();
     } finally { this.loading = false; }
   }
 
-  // ---------------- History + Forecast (query) ----------------
+  // ---------------- History (query) — NO saved forecast overlay ----------------
   async loadHistoryForQuery() {
     this.errorMessage = null;
     const q = (this.queryCtrl.value || '').trim();
@@ -309,54 +261,36 @@ export class ForecastTuningComponent implements OnInit, OnDestroy {
 
     const bucket = this.periodSlug();
     const params = new HttpParams().set('q', q).set('max_points', '800');
+
     this.loading = true;
     try {
-      const [hist, fc] = await Promise.all([
-        firstValueFrom(this.http.get<ISeriesPoint[]>(`${this.API}/history/${bucket}-series-by-query`, { params })),
-        this.fetchForecastSeries(bucket, q),
-      ]);
-
-      if (!hist?.length && !fc?.length) {
-        this.errorMessage = 'No data for this query.'; this.destroyChart(); return;
-      }
-
-      const base = hist?.length ? hist : fc!;
-      const baseColor = hist?.length ? this.COLORS.history : this.COLORS.forecastSaved;
+      const hist = await firstValueFrom(
+        this.http.get<ISeriesPoint[]>(`${this.API}/history/${bucket}-series-by-query`, { params })
+      );
+      if (!hist?.length) { this.errorMessage = 'No history for this query.'; this.destroyChart(); return; }
 
       this.drawChart(
-        base.map(d=>d.StartDate),
-        base.map(d=>d.Qty),
-        hist?.length ? 'History (Query)' : 'Forecast (Saved, Query)',
-        baseColor
+        hist.map(s => s.StartDate),
+        hist.map(d => d.Qty),
+        'History (Query)',
+        this.COLORS.history
       );
-
-      if (hist?.length && fc?.length) {
-        this.addDatasetAlignedStyled(
-          fc.map(d=>d.StartDate),
-          fc.map(d=>d.Qty),
-          'Forecast (Saved, Query)',
-          {
-            borderDash: [6,3],
-            pointRadius: 1,
-            borderColor: this.COLORS.forecastSaved,
-            backgroundColor: this.COLORS.forecastSaved,
-            pointBackgroundColor: this.COLORS.forecastSaved,
-          }
-        );
-      }
     } catch (e) {
       console.error(e);
-      this.errorMessage = 'Failed to load query series.';
+      this.errorMessage = 'Failed to load query history.';
       this.destroyChart();
     } finally { this.loading = false; }
   }
 
-  // ---------------- Forecast / Backtest (single key) ----------------
+  // ---------------- Forecast (per key; daily/weekly/monthly) ----------------
   private requireKey(): IKey | null {
     const p = (this.productIdCtrl.value || '').trim();
     const c = (this.channelIdCtrl.value || '').trim();
     const l = (this.locationIdCtrl.value || '').trim();
-    if (!p || !c || !l) { this.errorMessage = 'Pick ProductID, ChannelID and LocationID to run single-key ops.'; return null; }
+    if (!p || !c || !l) {
+      this.errorMessage = 'Pick ProductID, ChannelID and LocationID to run single-key ops.';
+      return null;
+    }
     return { ProductID: p, ChannelID: c, LocationID: l };
   }
 
@@ -365,112 +299,82 @@ export class ForecastTuningComponent implements OnInit, OnDestroy {
     const k = this.requireKey(); if (!k) return;
 
     const period = this.periodSlug();
-    const lag = this.lagCtrl.value ?? 3;
-    const horizon = this.horizonCtrl.value ?? 12;
-    const params = this.paramsValue();
-    const features = this.featuresValue(period);
+    const horizon = this.horizonCtrl.value ?? 18;
     const use_cleansed = this.useCleansedCtrl.value ?? false;
-    const color = save ? this.COLORS.forecastSaved : this.COLORS.forecastKey;
 
     this.loading = true;
     try {
-      const body = { period, key: k, horizon, lag, use_cleansed, save, use_generated_periods: true, params, features };
-      const res: any = await firstValueFrom(this.http.post(`${this.API}/forecast/xgb/run`, body));
+      const body = { key: k, period, horizon, save, use_cleansed };
+      const res: any = await firstValueFrom(
+        this.http.post(`${this.API}/forecast/18m/run-by-key`, body)
+      );
+      this.selectedModel = res?.model ?? null;
+
       const preds = (res?.predictions || []) as Array<{ StartDate: string; Qty: number }>;
       if (!preds.length) { this.errorMessage = 'No forecast produced.'; return; }
-      const labels = preds.map(p => p.StartDate);
+
+      const labels = preds.map(p => p.StartDate); // full ISO
       const values = preds.map(p => p.Qty);
 
       if (!this.chart) this.drawChart(labels, [], '');
       this.addDatasetAlignedStyled(labels, values,
-        save ? 'Forecast (Saved, Key)' : 'Forecast (Key)',
+        'Forecast (Key)',
         {
-          borderDash: [2,2],
           pointRadius: 2,
-          borderColor: color,
-          backgroundColor: color,
-          pointBackgroundColor: color,
+          borderColor: this.COLORS.forecastKey,
+          backgroundColor: this.COLORS.forecastKey,
+          pointBackgroundColor: this.COLORS.forecastKey,
         }
       );
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      this.errorMessage = 'Failed to run single-key forecast.';
+      this.errorMessage = e?.error?.detail || 'Failed to run forecast.';
     } finally { this.loading = false; }
   }
 
-  async runBacktest() {
-    this.errorMessage = null; this.metrics = null;
-    const k = this.requireKey(); if (!k) return;
+  // ---------------- Query aggregate forecast (no saved overlay) -------------
+  async runForecastForQuery() {
+    this.errorMessage = null;
+    const q = (this.queryCtrl.value || '').trim();
+    if (!q) { this.errorMessage = 'This saved search has no query.'; return; }
 
     const period = this.periodSlug();
-    const lag = this.lagCtrl.value ?? 3;
-    const horizon = this.horizonCtrl.value ?? 12;
-    const folds = this.foldsCtrl.value ?? 3;
-    const params = this.paramsValue();
-    const features = this.featuresValue(period);
+    const horizon = this.horizonCtrl.value ?? 18;
+    const max_keys = 500;
     const use_cleansed = this.useCleansedCtrl.value ?? false;
 
     this.loading = true;
     try {
-      const body = { period, key: k, horizon, lag, folds, use_cleansed, params, features };
-      const res: any = await firstValueFrom(this.http.post(`${this.API}/forecast/xgb/backtest`, body));
-      this.metrics = res?.metrics || null;
-    } catch (e) {
+      const res: any = await firstValueFrom(
+        this.http.post(`${this.API}/forecast/18m/run-by-query`, {
+          q, period, horizon, max_keys, use_cleansed
+        })
+      );
+
+      const series = (res?.series || []) as ISeriesPoint[];
+      if (!series.length) { this.errorMessage = 'No forecast produced for this saved search.'; return; }
+
+      const labels = series.map(s => s.StartDate); // full ISO
+      const values = series.map(s => s.Qty);
+
+      if (!this.chart) this.drawChart(labels, [], '');
+      this.addDatasetAlignedStyled(labels, values, 'Forecast (Query)', {
+        pointRadius: 2,
+        borderColor: this.COLORS.forecastQuery,
+        backgroundColor: this.COLORS.forecastQuery,
+        pointBackgroundColor: this.COLORS.forecastQuery,
+      });
+    } catch (e: any) {
       console.error(e);
-      this.errorMessage = 'Backtest failed (not enough history?)';
-    } finally { this.loading = false; }
+      this.errorMessage = e?.error?.detail || 'Failed to run forecast for this saved search.';
+    } finally {
+      this.loading = false;
+    }
   }
 
-  async tuneXgb() {
-    this.errorMessage = null; this.tuneResult = null;
-    const k = this.requireKey(); if (!k) return;
-
-    const period = this.periodSlug();
-    const horizon = this.horizonCtrl.value ?? 12;
-    const folds = this.foldsCtrl.value ?? 3;
-    const use_cleansed = this.useCleansedCtrl.value ?? false;
-
-    this.loading = true;
-    try {
-      const body = { period, key: k, horizon, folds, use_cleansed };
-      this.tuneResult = await firstValueFrom(this.http.post<ITuneResult>(`${this.API}/forecast/xgb/tune`, body));
-    } catch (e) {
-      console.error(e);
-      this.errorMessage = 'Tune failed.';
-    } finally { this.loading = false; }
-  }
-
-  applyBestFromTune() {
-    const b = this.tuneResult?.best; if (!b) return;
-
-    const currParams = this.xgbParamsForm.value as Record<string, any>;
-
-    // lag
-    this.lagCtrl.setValue(b.lag);
-
-    // params
-    this.xgbParamsForm.patchValue({
-      n_estimators:      b.params?.['n_estimators']      ?? currParams['n_estimators'],
-      learning_rate:     b.params?.['learning_rate']     ?? currParams['learning_rate'],
-      max_depth:         b.params?.['max_depth']         ?? currParams['max_depth'],
-      subsample:         b.params?.['subsample']         ?? currParams['subsample'],
-      colsample_bytree:  b.params?.['colsample_bytree']  ?? currParams['colsample_bytree'],
-      reg_lambda:        b.params?.['reg_lambda']        ?? currParams['reg_lambda'],
-      reg_alpha:         b.params?.['reg_alpha']         ?? currParams['reg_alpha'],
-      min_child_weight:  b.params?.['min_child_weight']  ?? currParams['min_child_weight'],
-      gamma:             b.params?.['gamma']             ?? currParams['gamma'],
-    });
-
-    // features (serialize arrays as CSV)
-    const toCsv = (a: any) => Array.isArray(a) ? a.join(',') : '';
-    this.xgbFeaturesForm.patchValue({
-      seasonal_lags:       toCsv(b.features?.['seasonal_lags']),
-      rolling_windows:     toCsv(b.features?.['rolling_windows']),
-      use_log1p:         !!(b.features?.['use_log1p']),
-      two_stage:         !!(b.features?.['two_stage']),
-      zero_prob_threshold: b.features?.['zero_prob_threshold'] ?? (this.xgbFeaturesForm.value as any)['zero_prob_threshold']
-    });
-  }
+  // ---------------- Backtest / Tune placeholders ----------------
+  async runBacktest() { this.errorMessage = 'Backtest via UI is not available with this runner.'; }
+  async tuneXgb()   { this.errorMessage = 'XGB tuning UI is disabled with this runner.'; }
 
   // ---------------- Chart helpers ----------------
   private destroyChart() {
@@ -500,6 +404,7 @@ export class ForecastTuningComponent implements OnInit, OnDestroy {
     if (!ctx) return;
 
     const lineColor = color ?? this.COLORS.history;
+    const self = this;
 
     this.chart = new Chart(ctx, {
       type: 'line',
@@ -517,12 +422,27 @@ export class ForecastTuningComponent implements OnInit, OnDestroy {
           fill: true
         }] : []
       },
+
       options: {
-        responsive: true, maintainAspectRatio: false,
+        responsive: true,
+        maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
-        plugins: { legend: { display: true }, tooltip: { enabled: true } },
+        plugins: {
+          legend: { display: true },
+          tooltip: { enabled: true }
+        },
         scales: {
-          x: { title: { display: true, text: 'Start Date' } },
+          x: {
+            title: { display: true, text: 'Start Date' },
+            ticks: {
+              callback: (value, index) => {
+                const raw = (self.chart?.data.labels?.[index] as string) || '';
+                // Show YYYY-MM-DD for daily/weekly, YYYY-MM for monthly
+                const isMonthly = self.periodSelection.value === 'Monthly';
+                return raw.substring(0, isMonthly ? 7 : 10);
+              }
+            }
+          },
           y: this.computeYScale(values)
         }
       }
@@ -534,7 +454,7 @@ export class ForecastTuningComponent implements OnInit, OnDestroy {
     const min = nums.length ? Math.min(...nums) : 0;
     const max = nums.length ? Math.max(...nums) : 1;
     if (max === min) { return { min: Math.max(0, min - 1), max: max + 1 }; }
-    const pad = 0.08 * (max - min); // 8% headroom
+    const pad = 0.08 * (max - min);
     return { min: Math.max(0, min - pad), max: max + pad };
   }
 
@@ -549,7 +469,6 @@ export class ForecastTuningComponent implements OnInit, OnDestroy {
     return this.computeYScale(dsVals);
   }
 
-  // Aligns all datasets to the union of labels so overlays don’t shift
   private addDatasetAlignedStyled(
     newLabels: string[],
     newValues: number[],
@@ -587,53 +506,9 @@ export class ForecastTuningComponent implements OnInit, OnDestroy {
       ...style
     });
 
-    // Recompute dynamic y scale from all datasets
     const yScale = this.yScaleFromAllDatasets();
     (this.chart.options.scales as any).y = yScale;
 
     this.chart.update();
-  }
-
-  // --------- helpers to call the forecast-series API ----------
-  private async fetchForecastSeries(bucket: 'daily'|'weekly'|'monthly', q: string) {
-    const params = new HttpParams().set('q', q).set('max_points', '800');
-    return firstValueFrom(this.http.get<ISeriesPoint[]>(`${this.API}/forecast/${bucket}-series-by-query`, { params }));
-  }
-
-  // ---------------- Query aggregate forecast (optional overlay) -------------
-  async runForecastForQuery() {
-    this.errorMessage = null;
-    const q = (this.queryCtrl.value || '').trim();
-    if (!q) { this.errorMessage = 'This saved search has no query.'; return; }
-
-    const period = this.periodSlug();
-    const lag = this.lagCtrl.value ?? 3;
-    const horizon = this.horizonCtrl.value ?? 12;
-    const params = this.paramsValue();
-    const features = this.featuresValue(period);
-    const use_cleansed = this.useCleansedCtrl.value ?? false;
-
-    this.loading = true;
-    try {
-      const body = { period, q, horizon, lag, use_cleansed, use_generated_periods: true, params, features, max_keys: 200 };
-      const fcSeries = await firstValueFrom(
-        this.http.post<ISeriesPoint[]>(`${this.API}/forecast/xgb/aggregate-by-query`, body)
-      );
-      if (!fcSeries?.length) { this.errorMessage = 'No forecast produced.'; return; }
-      const labels = fcSeries.map(s => s.StartDate);
-      const values = fcSeries.map(s => s.Qty);
-
-      if (!this.chart) this.drawChart(labels, [], '');
-      this.addDatasetAlignedStyled(labels, values, 'Forecast (Query)', {
-        borderDash: [2,2],
-        pointRadius: 2,
-        borderColor: this.COLORS.forecastQuery,
-        backgroundColor: this.COLORS.forecastQuery,
-        pointBackgroundColor: this.COLORS.forecastQuery,
-      });
-    } catch (e) {
-      console.error(e);
-      this.errorMessage = 'Failed to run forecast for this query.';
-    } finally { this.loading = false; }
   }
 }

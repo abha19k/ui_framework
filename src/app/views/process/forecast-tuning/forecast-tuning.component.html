@@ -1,5 +1,118 @@
 <c-card>
+  <!-- ====== TOP: Single-key selection & actions ====== -->
   <c-card-header>
+    <!-- Single key controls -->
+    <div class="row g-2 align-items-end">
+      <div class="col-12 col-md-2">
+        <label class="form-label">Period</label>
+        <select class="form-select" [formControl]="periodSelection">
+          <option>Daily</option><option>Weekly</option><option>Monthly</option>
+        </select>
+        <div class="form-text">
+        </div>
+      </div>
+      <div class="col-12 col-md-3">
+        <label class="form-label">ProductID</label>
+        <select class="form-select" [formControl]="productIdCtrl">
+          <option value="">(Any)</option>
+          <option *ngFor="let v of productIds" [value]="v">{{ v }}</option>
+        </select>
+      </div>
+      <div class="col-12 col-md-3">
+        <label class="form-label">ChannelID</label>
+        <select class="form-select" [formControl]="channelIdCtrl">
+          <option value="">(Any)</option>
+          <option *ngFor="let v of channelIds" [value]="v">{{ v }}</option>
+        </select>
+      </div>
+      <div class="col-12 col-md-4">
+        <label class="form-label">LocationID</label>
+        <select class="form-select" [formControl]="locationIdCtrl">
+          <option value="">(Any)</option>
+          <option *ngFor="let v of locationIds" [value]="v">{{ v }}</option>
+        </select>
+      </div>
+
+      <div class="col-12 d-flex gap-2">
+        <button cButton color="secondary" (click)="updatePlot()" [disabled]="loading">Load History</button>
+        <button cButton color="primary" (click)="runSingleKeyForecast(false)" [disabled]="loading">Run Forecast</button>
+        <button cButton color="primary" (click)="runSingleKeyForecast(true)" [disabled]="loading">Save Forecast</button>
+        <button cButton color="primary" (click)="runBacktest()" [disabled]="loading">Backtest</button>
+        <button cButton color="primary" (click)="tuneXgb()" [disabled]="loading">Tune (grid)</button>
+      </div>
+
+      <div class="col-12" *ngIf="selectedModel">
+        <span class="badge bg-info text-dark mt-2">Selected model: {{ selectedModel }}</span>
+      </div>
+    </div>
+  </c-card-header>
+
+  <!-- ====== MIDDLE: Plot & metrics ====== -->
+  <c-card-body>
+    <div *ngIf="errorMessage" class="text-danger mb-2">{{ errorMessage }}</div>
+
+    <!-- Chart legend (no Saved Forecast shown) -->
+    <div class="d-flex flex-wrap align-items-center gap-4 small text-muted mb-2">
+      <span class="d-inline-flex align-items-center gap-2">
+        <span style="display:inline-block;width:28px;height:0;border-top:3px solid #2563eb;border-radius:2px;"></span>
+        History
+      </span>
+      <span class="d-inline-flex align-items-center gap-2">
+        <span style="display:inline-block;width:28px;height:0;border-top:3px solid #10b981;border-radius:2px;"></span>
+        Forecast
+      </span>
+      <span class="d-inline-flex align-items-center gap-2">
+        <span style="display:inline-block;width:28px;height:0;border-top:3px solid #f59e0b;border-radius:2px;"></span>
+        Forecast (Query)
+      </span>
+    </div>
+
+    <div style="height: 420px;">
+      <canvas #chartCanvas></canvas>
+    </div>
+
+    <div *ngIf="metrics" class="mt-3">
+      <h6>Backtest metrics</h6>
+      <table cTable class="table-sm">
+        <thead>
+          <tr><th>MAE</th><th>RMSE</th><th>MAPE%</th><th>sMAPE%</th><th>WAPE%</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>{{ metrics['MAE']  | number:'1.2-2' }}</td>
+            <td>{{ metrics['RMSE'] | number:'1.2-2' }}</td>
+            <td>{{ metrics['MAPE'] | number:'1.2-2' }}</td>
+            <td>{{ metrics['sMAPE']| number:'1.2-2' }}</td>
+            <td>{{ metrics['WAPE'] | number:'1.2-2' }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div *ngIf="tuneResult?.results?.length" class="mt-3">
+      <h6>Top configs (by WAPE)</h6>
+      <table cTable class="table-sm">
+        <thead>
+          <tr>
+            <th>Lag</th><th>WAPE%</th><th>sMAPE%</th><th>RMSE</th><th>Params</th><th>Features</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let r of tuneResult!.results">
+            <td>{{ r.lag }}</td>
+            <td>{{ r.WAPE | number:'1.1-1' }}</td>
+            <td>{{ r.sMAPE | number:'1.1-1' }}</td>
+            <td>{{ r.RMSE | number:'1.1-1' }}</td>
+            <td><code>{{ r.params | json }}</code></td>
+            <td><code>{{ r.features | json }}</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ====== BOTTOM: Saved searches & tuning ====== -->
+    <hr class="my-4" />
+
     <!-- Saved Searches: query mode -->
     <div class="row g-2 align-items-end mb-2">
       <div class="col-12 col-md-4">
@@ -58,11 +171,11 @@
     <div class="row g-2 mt-2">
       <div class="col">
         <label class="form-label">Seasonal lags (CSV)</label>
-        <input type="text" class="form-control" [formControl]="xgbFeaturesForm.controls.seasonal_lags" placeholder="e.g. 7,14,28">
+        <input type="text" class="form-control" [formControl]="xgbFeaturesForm.controls.seasonal_lags" placeholder="e.g. 12,24">
       </div>
       <div class="col">
         <label class="form-label">Rolling windows (CSV)</label>
-        <input type="text" class="form-control" [formControl]="xgbFeaturesForm.controls.rolling_windows" placeholder="e.g. 7,28">
+        <input type="text" class="form-control" [formControl]="xgbFeaturesForm.controls.rolling_windows" placeholder="e.g. 3,6">
       </div>
       <div class="col-12 col-md-3 d-flex align-items-end">
         <div class="form-check me-3">
@@ -104,113 +217,5 @@
           <input type="number" class="form-control" [formControl]="xgbParamsForm.controls.gamma" step="0.1" min="0"></div>
       </div>
     </details>
-
-    <hr class="my-3" />
-
-    <!-- Single key controls -->
-    <div class="row g-2 align-items-end">
-      <div class="col-12 col-md-2">
-        <label class="form-label">Period</label>
-        <select class="form-select" [formControl]="periodSelection">
-          <option>Daily</option><option>Weekly</option><option>Monthly</option>
-        </select>
-      </div>
-      <div class="col-12 col-md-3">
-        <label class="form-label">ProductID</label>
-        <select class="form-select" [formControl]="productIdCtrl">
-          <option value="">(Any)</option>
-          <option *ngFor="let v of productIds" [value]="v">{{ v }}</option>
-        </select>
-      </div>
-      <div class="col-12 col-md-3">
-        <label class="form-label">ChannelID</label>
-        <select class="form-select" [formControl]="channelIdCtrl">
-          <option value="">(Any)</option>
-          <option *ngFor="let v of channelIds" [value]="v">{{ v }}</option>
-        </select>
-      </div>
-      <div class="col-12 col-md-4">
-        <label class="form-label">LocationID</label>
-        <select class="form-select" [formControl]="locationIdCtrl">
-          <option value="">(Any)</option>
-          <option *ngFor="let v of locationIds" [value]="v">{{ v }}</option>
-        </select>
-      </div>
-
-      <div class="col-12 d-flex gap-2">
-        <button cButton color="secondary" (click)="updatePlot()" [disabled]="loading">Load history (single key)</button>
-        <button cButton color="primary" (click)="runSingleKeyForecast(false)" [disabled]="loading">Run forecast (key)</button>
-        <button cButton color="primary" (click)="runSingleKeyForecast(true)" [disabled]="loading">Save forecast (key)</button>
-        <button cButton color="primary" (click)="runBacktest()" [disabled]="loading">Backtest</button>
-        <button cButton color="primary" (click)="tuneXgb()" [disabled]="loading">Tune (grid)</button>
-      </div>
-    </div>
-  </c-card-header>
-
-  <c-card-body>
-    <div *ngIf="errorMessage" class="text-danger mb-2">{{ errorMessage }}</div>
-
-    <!-- Chart legend (matches TS colors & line styles) -->
-    <div class="d-flex flex-wrap align-items-center gap-4 small text-muted mb-2">
-      <span class="d-inline-flex align-items-center gap-2">
-        <span style="display:inline-block;width:28px;height:0;border-top:3px solid #2563eb;border-radius:2px;"></span>
-        History
-      </span>
-      <span class="d-inline-flex align-items-center gap-2">
-        <span style="display:inline-block;width:28px;height:0;border-top:3px dashed #ef4444;border-radius:2px;"></span>
-        Forecast (Saved)
-      </span>
-      <span class="d-inline-flex align-items-center gap-2">
-        <span style="display:inline-block;width:28px;height:0;border-top:3px dashed #f59e0b;border-radius:2px;"></span>
-        Forecast (Key)
-      </span>
-      <span class="d-inline-flex align-items-center gap-2">
-        <span style="display:inline-block;width:28px;height:0;border-top:3px dashed #10b981;border-radius:2px;"></span>
-        Forecast (Query)
-      </span>
-    </div>
-
-    <div style="height: 420px;">
-      <canvas #chartCanvas></canvas>
-    </div>
-
-    <div *ngIf="metrics" class="mt-3">
-      <h6>Backtest metrics</h6>
-      <table cTable class="table-sm">
-        <thead>
-          <tr><th>MAE</th><th>RMSE</th><th>MAPE%</th><th>sMAPE%</th><th>WAPE%</th></tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>{{ metrics['MAE']  | number:'1.2-2' }}</td>
-            <td>{{ metrics['RMSE'] | number:'1.2-2' }}</td>
-            <td>{{ metrics['MAPE'] | number:'1.2-2' }}</td>
-            <td>{{ metrics['sMAPE']| number:'1.2-2' }}</td>
-            <td>{{ metrics['WAPE'] | number:'1.2-2' }}</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div *ngIf="tuneResult?.results?.length" class="mt-3">
-      <h6>Top configs (by WAPE)</h6>
-      <table cTable class="table-sm">
-        <thead>
-          <tr>
-            <th>Lag</th><th>WAPE%</th><th>sMAPE%</th><th>RMSE</th><th>Params</th><th>Features</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr *ngFor="let r of tuneResult!.results">
-            <td>{{ r.lag }}</td>
-            <td>{{ r.WAPE | number:'1.1-1' }}</td>
-            <td>{{ r.sMAPE | number:'1.1-1' }}</td>
-            <td>{{ r.RMSE | number:'1.1-1' }}</td>
-            <td><code>{{ r.params | json }}</code></td>
-            <td><code>{{ r.features | json }}</code></td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
   </c-card-body>
 </c-card>
