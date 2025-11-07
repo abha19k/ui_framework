@@ -1,3 +1,4 @@
 UI Framework
 
-Planwise Analytics
+Planwise Frontend
+Copyright of Abha Khakurdikar
