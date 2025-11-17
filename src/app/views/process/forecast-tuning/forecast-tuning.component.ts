@@ -332,45 +332,62 @@ export class ForecastTuningComponent implements OnInit, OnDestroy {
     } finally { this.loading = false; }
   }
 
-  // ---------------- Query aggregate forecast (no saved overlay) -------------
-  async runForecastForQuery() {
-    this.errorMessage = null;
-    const q = (this.queryCtrl.value || '').trim();
-    if (!q) { this.errorMessage = 'This saved search has no query.'; return; }
 
-    const period = this.periodSlug();
-    const horizon = this.horizonCtrl.value ?? 18;
-    const max_keys = 500;
-    const use_cleansed = this.useCleansedCtrl.value ?? false;
+    // ---------------- Query aggregate forecast (optionally save) -------------
+  async runForecastForQuery(save: boolean = false) {
+  this.errorMessage = null;
+  const q = (this.queryCtrl.value || '').trim();
+  if (!q) { this.errorMessage = 'This saved search has no query.'; return; }
 
-    this.loading = true;
-    try {
-      const res: any = await firstValueFrom(
-        this.http.post(`${this.API}/forecast/18m/run-by-query`, {
-          q, period, horizon, max_keys, use_cleansed
-        })
-      );
+  const period = this.periodSlug();
+  const horizon = this.horizonCtrl.value ?? 18;
+  const max_keys = 500;
+  const use_cleansed = this.useCleansedCtrl.value ?? false;
 
-      const series = (res?.series || []) as ISeriesPoint[];
-      if (!series.length) { this.errorMessage = 'No forecast produced for this saved search.'; return; }
+  this.loading = true;
+  try {
+    const res: any = await firstValueFrom(
+      this.http.post(`${this.API}/forecast/18m/run-by-query`, {
+        q,
+        period,
+        horizon,
+        max_keys,
+        use_cleansed,
+        save, // 🔴 this is the important part
+      })
+    );
 
-      const labels = series.map(s => s.StartDate); // full ISO
-      const values = series.map(s => s.Qty);
-
-      if (!this.chart) this.drawChart(labels, [], '');
-      this.addDatasetAlignedStyled(labels, values, 'Forecast (Query)', {
-        pointRadius: 2,
-        borderColor: this.COLORS.forecastQuery,
-        backgroundColor: this.COLORS.forecastQuery,
-        pointBackgroundColor: this.COLORS.forecastQuery,
-      });
-    } catch (e: any) {
-      console.error(e);
-      this.errorMessage = e?.error?.detail || 'Failed to run forecast for this saved search.';
-    } finally {
-      this.loading = false;
+    const series = (res?.series || []) as ISeriesPoint[];
+    if (!series.length) {
+      this.errorMessage = 'No forecast produced for this saved search.';
+      return;
     }
+
+    const labels = series.map(s => s.StartDate); // full ISO
+    const values = series.map(s => s.Qty);
+
+    if (!this.chart) this.drawChart(labels, [], '');
+    this.addDatasetAlignedStyled(labels, values, 'Forecast (Query)', {
+      pointRadius: 2,
+      borderColor: this.COLORS.forecastQuery,
+      backgroundColor: this.COLORS.forecastQuery,
+      pointBackgroundColor: this.COLORS.forecastQuery,
+    });
+
+    // Optional: tiny UX improvement
+    if (save) {
+      // not a toast, but at least some confirmation
+      this.errorMessage = null;
+    }
+  } catch (e: any) {
+    console.error(e);
+    this.errorMessage = e?.error?.detail || 'Failed to run forecast for this saved search.';
+  } finally {
+    this.loading = false;
   }
+}
+ 
+  
 
   // ---------------- Backtest / Tune placeholders ----------------
   async runBacktest() { this.errorMessage = 'Backtest via UI is not available with this runner.'; }

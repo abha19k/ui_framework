@@ -133,14 +133,20 @@
       </div>
 
       <div class="col-12 col-md-4 d-flex gap-2">
-        <button cButton color="dark" class="flex-fill" (click)="loadHistoryForQuery()" [disabled]="loading">
+        <button cButton color="dark" class="flex-fill"
+                (click)="loadHistoryForQuery()" [disabled]="loading">
           Load History (Query)
         </button>
-        <button cButton color="primary" class="flex-fill" (click)="runForecastForQuery()" [disabled]="loading">
+        <button cButton color="primary" class="flex-fill"
+                (click)="runForecastForQuery(false)" [disabled]="loading">
           Run Forecast (Query)
         </button>
+        <button cButton color="success" class="flex-fill"
+                (click)="runForecastForQuery(true)" [disabled]="loading">
+          Save Forecast (Query)
+        </button>
       </div>
-    </div>
+    </div>   
 
     <!-- Tuning quick params -->
     <div class="row g-2 align-items-end">
