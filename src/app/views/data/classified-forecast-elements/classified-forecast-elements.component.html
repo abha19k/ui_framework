@@ -14,8 +14,15 @@
 
       <div class="col-sm-3">
         <div class="form-check mt-4">
-          <input id="inclInactive" type="checkbox" class="form-check-input" [formControl]="includeInactive" />
-          <label class="form-check-label" for="inclInactive">Include inactive (history)</label>
+          <input
+            id="inclInactive"
+            type="checkbox"
+            class="form-check-input"
+            [formControl]="includeInactive"
+          />
+          <label class="form-check-label" for="inclInactive">
+            Include inactive (history)
+          </label>
         </div>
       </div>
 
@@ -26,8 +33,12 @@
       </div>
 
       <div class="col-sm-3 text-sm-end d-flex gap-2 justify-content-sm-end">
-        <button class="btn btn-outline-secondary" (click)="runInPlanning()">Re-run in Planning Run</button>
-        <button class="btn btn-outline-primary" (click)="exportCSV()" [disabled]="!rows.length">Export CSV</button>
+        <button class="btn btn-outline-secondary" (click)="runInPlanning()">
+          Re-run in Planning Run
+        </button>
+        <button class="btn btn-outline-primary" (click)="exportCSV()" [disabled]="!rows.length">
+          Export CSV
+        </button>
       </div>
     </div>
 
@@ -65,11 +76,17 @@
             <td>{{ r.ChannelID }}</td>
             <td>{{ r.LocationID }}</td>
             <td>{{ r.Period }}</td>
-            <td class="text-end">{{ r.adi === null ? '—' : (r.adi | number:'1.2-2') }}</td>
-            <td class="text-end">{{ r.cv2 === null ? '—' : (r.cv2 | number:'1.2-2') }}</td>
+            <td class="text-end">
+              {{ r.adi === null ? '—' : (r.adi | number : '1.2-2') }}
+            </td>
+            <td class="text-end">
+              {{ r.cv2 === null ? '—' : (r.cv2 | number : '1.2-2') }}
+            </td>
             <td>{{ r.category }}</td>
             <td><code>{{ r.algorithm }}</code></td>
-            <td>{{ r.created_at ? (r.created_at | date:'yyyy-MM-dd HH:mm') : '—' }}</td>
+            <td>
+              {{ r.created_at ? (r.created_at | date : 'yyyy-MM-dd HH:mm') : '—' }}
+            </td>
           </tr>
         </tbody>
       </table>

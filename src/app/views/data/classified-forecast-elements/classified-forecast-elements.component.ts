@@ -66,10 +66,11 @@ export class ClassifiedForecastElementsComponent implements OnInit {
   }
 
   private toVM(r: any): RowVM {
+    const slug = this.slug();
     const Period: PeriodView =
       (r.Period as PeriodView) ??
       (r.period as PeriodView) ??
-      (this.slug() === 'weekly' ? 'Weekly' : this.slug() === 'monthly' ? 'Monthly' : 'Daily');
+      (slug === 'weekly' ? 'Weekly' : slug === 'monthly' ? 'Monthly' : 'Daily');
 
     return {
       ProductID: String(r.ProductID ?? r.productid ?? ''),
@@ -81,7 +82,12 @@ export class ClassifiedForecastElementsComponent implements OnInit {
       category: String(r.Category ?? r.category ?? ''),
       algorithm: String(r.Algorithm ?? r.algorithm ?? ''),
       isActive: r.IsActive ?? r.is_active ?? undefined,
-      created_at: r.created_at ?? r.CreatedAt ?? undefined
+      created_at:
+        r.ComputedAt ??
+        r.computed_at ??
+        r.CreatedAt ??
+        r.created_at ??
+        undefined,
     };
   }
 
@@ -98,6 +104,7 @@ export class ClassifiedForecastElementsComponent implements OnInit {
       next: res => {
         const mapped = (res || []).map(x => this.toVM(x));
         this.rows = mapped;
+
         // default sort by CreatedAt desc if exists, else ProductID asc
         if (this.rows.some(r => r.created_at)) {
           this.sortColumn = 'created_at';
@@ -135,24 +142,47 @@ export class ClassifiedForecastElementsComponent implements OnInit {
         const nb: number = bv == null ? Number.NEGATIVE_INFINITY : Number(bv);
         return (na - nb) * dir;
       }
-      
+
       if (col === 'created_at') {
         const da = av ? new Date(av).getTime() : 0;
         const db = bv ? new Date(bv).getTime() : 0;
         return (da - db) * dir;
       }
+
       return String(av ?? '').localeCompare(String(bv ?? '')) * dir;
     });
   }
 
   exportCSV() {
     if (!this.rows.length) return;
-    const header = ['ProductID','ChannelID','LocationID','Period','ADI','CV2','Category','Algorithm','IsActive','CreatedAt'];
-    const lines = this.rows.map(r => [
-      r.ProductID, r.ChannelID, r.LocationID, r.Period,
-      r.adi ?? '', r.cv2 ?? '', r.category, r.algorithm,
-      r.isActive ?? '', r.created_at ?? ''
-    ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
+    const header = [
+      'ProductID',
+      'ChannelID',
+      'LocationID',
+      'Period',
+      'ADI',
+      'CV2',
+      'Category',
+      'Algorithm',
+      'IsActive',
+      'CreatedAt'
+    ];
+    const lines = this.rows.map(r =>
+      [
+        r.ProductID,
+        r.ChannelID,
+        r.LocationID,
+        r.Period,
+        r.adi ?? '',
+        r.cv2 ?? '',
+        r.category,
+        r.algorithm,
+        r.isActive ?? '',
+        r.created_at ?? ''
+      ]
+        .map(v => `"${String(v).replace(/"/g, '""')}"`)
+        .join(',')
+    );
     const csv = [header.join(','), ...lines].join('\r\n');
 
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });

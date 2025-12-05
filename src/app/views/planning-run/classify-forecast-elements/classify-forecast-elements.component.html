@@ -66,8 +66,10 @@
             <th class="text-end">CV²</th>
             <th>Category</th>
             <th>Chosen Model</th>
+            <th>Created At</th>  <!-- NEW -->
           </tr>
         </thead>
+      
         <tbody>
           <tr *ngFor="let r of rows">
             <td>{{ r.ProductID }}</td>
@@ -77,8 +79,10 @@
             <td class="text-end">{{ r.cv2 === null ? '—' : (r.cv2 | number:'1.2-2') }}</td>
             <td>{{ r.category }}</td>
             <td><code>{{ chosenAlgo(r.category) }}</code></td>
+            <td>{{ r.createdAt | date:'yyyy-MM-dd HH:mm' }}</td> <!-- NEW -->
           </tr>
         </tbody>
+        
       </table>
     </div>
   </c-card-body>

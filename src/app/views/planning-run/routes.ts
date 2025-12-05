@@ -19,13 +19,13 @@ export const routes: Routes = [
           title: 'Store Forecast'
         }
       },
-      {
-        path: 'load-history',
-        loadComponent: () => import('./load-history/load-history.component').then(m => m.LoadHistoryComponent),
-        data: {
-          title: 'Load History'
-        }
-      },
+      // {
+      //   path: 'load-history',
+      //   loadComponent: () => import('./load-history/load-history.component').then(m => m.LoadHistoryComponent),
+      //   data: {
+      //     title: 'Load History'
+      //   }
+      // },
       {
       path: 'cleanse-history',
       loadComponent: () => import('./cleanse-history/cleanse-history.component').then(m => m.CleanseHistoryComponent),

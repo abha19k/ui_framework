@@ -25,7 +25,17 @@ interface ClassificationRow {
   cv2: number | null;
   category: 'Smooth' | 'Intermittent' | 'Erratic' | 'Sparse' | 'NotEnoughHistory';
   seasonal?: boolean | null;
+  createdAt?: string;  // NEW
 }
+
+interface HistoryRow {
+  ProductID: string;
+  ChannelID: string;
+  LocationID: string;
+  StartDate: string;
+  Qty: number;
+}
+
 
 type PeriodView = 'Daily' | 'Weekly' | 'Monthly';
 type Algo = 'HoltWinters' | 'XGBoost' | 'MovingAverage' | 'Croston' | 'ARIMA' | 'ETS';
@@ -119,58 +129,202 @@ export class ClassifyForecastElementsComponent implements OnInit {
   }
 
   /** Run: resolve keys from saved search then classify (using Cleansed-History only) */
-  async runClassification() {
-    this.errorMsg = null;
-    this.saveMsg = this.saveErr = null;
-    this.rows = [];
-    const idx = this.selectedSavedIndex.value ?? -1;
-    if (idx < 0 || idx >= this.savedSearches.length) {
-      this.errorMsg = 'Please select a saved search.';
+  /** Run: resolve keys from saved search then classify & load results */
+  /** Run: resolve keys from saved search then classify & load results with ADI/CV² */
+async runClassification() {
+  this.errorMsg = null;
+  this.saveMsg = this.saveErr = null;
+  this.rows = [];
+
+  const idx = this.selectedSavedIndex.value ?? -1;
+  if (idx < 0 || idx >= this.savedSearches.length) {
+    this.errorMsg = 'Please select a saved search.';
+    return;
+  }
+
+  const saved = this.savedSearches[idx];
+  const q = saved.query;
+  const params = new HttpParams().set('q', q).set('limit', 20000).set('offset', 0);
+
+  this.loading = true;
+  try {
+    // 1) Resolve keys from /api/search
+    const sr = await firstValueFrom(
+      this.http.get<SearchResult>(`${this.API}/search`, { params })
+    );
+    const keys = sr?.keys ?? [];
+    if (!keys.length) {
+      this.errorMsg = 'No matches for this saved query.';
       return;
     }
 
-    const q = this.savedSearches[idx].query;
-    const params = new HttpParams().set('q', q).set('limit', 20000).set('offset', 0);
+    // 2) Trigger backend classification
+    const computePayload: any = {
+      period: this.periodSlug(),
+      // backend ignores extras for now; keep for future
+      lookback_buckets: 8,
+      min_sum: 1.0,
+    };
 
-    this.loading = true;
-    try {
-      // 1) keys from /api/search (from ForecastElement universe)
-      const sr = await firstValueFrom(this.http.get<SearchResult>(`${this.API}/search`, { params }));
-      const keys = sr?.keys ?? [];
-      if (!keys.length) {
-        this.errorMsg = 'No matches for this saved query.';
-        return;
-      }
+    await firstValueFrom(
+      this.http.post(`${this.API}/classify/compute`, computePayload)
+    );
 
-      // 2) classify using Cleansed-History only
-      const payload = {
-        period: this.periodSlug(),
-        keys,
-        min_nonzero: 6,
-        /** pass selection settings so backend can honor them (future-proof) */
-        mode: this.form.get('autoEnabled')!.value ? 'auto' : 'manual',
-        auto: {
-          lookback: this.form.get('autoLookback')!.value,
-          algo: this.form.get('autoAlgo')!.value as Algo,   // defaults to XGBoost
-        },
-        manual: this.form.get('manual')!.value as Record<string, Algo>
-      };
-
-      const rows = await firstValueFrom(
-        this.http.post<ClassificationRow[]>(`${this.API}/classify/compute`, payload)
-      );
-      this.rows = rows ?? [];
-
-      if (!this.rows.length) {
-        this.errorMsg = 'No Cleansed-History found for these keys. Please run Cleanse History first.';
-      }
-    } catch (e: any) {
-      this.errorMsg = e?.error?.detail || e?.message || 'Failed to classify.';
-    } finally {
-      this.loading = false;
+    // 3) Fetch classification results from backend
+    interface BackendClassRow {
+      ProductID: string;
+      ChannelID: string;
+      LocationID: string;
+      Period: string;
+      Label: string;      // "Active" / "Inactive"
+      Score: number;
+      IsActive: boolean;
+      ComputedAt: string;
     }
-  }
 
+    const resParams = new HttpParams()
+      .set('period', this.periodSlug())
+      .set('include_inactive', 'true');
+
+    const allRes = await firstValueFrom(
+      this.http.get<BackendClassRow[]>(`${this.API}/classify/results`, { params: resParams })
+    );
+
+    if (!allRes?.length) {
+      this.errorMsg = 'No Cleansed-History found for this period. Please run Cleanse History first.';
+      return;
+    }
+
+    // restrict to our saved-search keys
+    const keySet = new Set(
+      keys.map(k => `${k.ProductID}||${k.ChannelID}||${k.LocationID}`)
+    );
+
+    const filtered = (allRes || []).filter(r =>
+      keySet.has(`${r.ProductID}||${r.ChannelID}||${r.LocationID}`)
+    );
+
+    if (!filtered.length) {
+      this.errorMsg = 'No Cleansed-History found for these keys. Please run Cleanse History first.';
+      return;
+    }
+
+    // 4) Load history for these keys to compute ADI/CV²
+    const histRows = await firstValueFrom(
+      this.http.post<HistoryRow[]>(
+        `${this.API}/history/${this.periodSlug()}-by-keys`,
+        { keys }
+      )
+    );
+
+    // Build per-key time series
+    const seriesMap = new Map<string, { dates: Date[]; qtys: number[] }>();
+    for (const h of histRows || []) {
+      const key = `${h.ProductID}||${h.ChannelID}||${h.LocationID}`;
+      const dt = new Date(h.StartDate);
+      const qty = Number(h.Qty) || 0;
+
+      if (!seriesMap.has(key)) {
+        seriesMap.set(key, { dates: [], qtys: [] });
+      }
+      const s = seriesMap.get(key)!;
+      s.dates.push(dt);
+      s.qtys.push(qty);
+    }
+
+    // Helper: compute ADI & CV² & category for a single key
+    const minNonZero = 6; // you already use this concept in payload
+    function computeMetrics(dates: Date[], qtys: number[]): {
+      periods: number;
+      nonzero: number;
+      adi: number | null;
+      cv2: number | null;
+      category: ClassificationRow['category'];
+    } {
+      if (!dates.length) {
+        return { periods: 0, nonzero: 0, adi: null, cv2: null, category: 'NotEnoughHistory' };
+      }
+
+      // sort by date
+      const idx = dates
+        .map((d, i) => [d.getTime(), i] as [number, number])
+        .sort((a, b) => a[0] - b[0])
+        .map(x => x[1]);
+
+      const sortedQtys = idx.map(i => qtys[i]);
+
+      const periods = sortedQtys.length;
+      const nonzeroVals = sortedQtys.filter(q => q > 0);
+      const nonzero = nonzeroVals.length;
+
+      if (periods === 0 || nonzero === 0 || nonzero < minNonZero) {
+        return { periods, nonzero, adi: null, cv2: null, category: 'NotEnoughHistory' };
+      }
+
+      const adi = periods / nonzero;
+
+      const mean =
+        nonzeroVals.reduce((s, q) => s + q, 0) / nonzeroVals.length;
+      let cv2: number | null = null;
+      if (mean > 0 && nonzeroVals.length > 1) {
+        const variance =
+          nonzeroVals.reduce((s, q) => s + (q - mean) * (q - mean), 0) /
+          (nonzeroVals.length - 1);
+        const std = Math.sqrt(variance);
+        cv2 = (std / mean) * (std / mean);
+      }
+
+      if (cv2 == null) {
+        return { periods, nonzero, adi, cv2: null, category: 'NotEnoughHistory' };
+      }
+
+      // Syntetos-based classification, with "Lumpy" mapped to "Sparse"
+      let category: ClassificationRow['category'] = 'Sparse';
+      if (adi < 1.32 && cv2 < 0.49) {
+        category = 'Smooth';
+      } else if (adi < 1.32 && cv2 >= 0.49) {
+        category = 'Erratic';
+      } else if (adi >= 1.32 && cv2 < 0.49) {
+        category = 'Intermittent';
+      } else {
+        category = 'Sparse'; // lumpy
+      }
+
+      return { periods, nonzero, adi, cv2, category };
+    }
+
+    // 5) Build UI rows
+    this.rows = filtered.map(r => {
+      const key = `${r.ProductID}||${r.ChannelID}||${r.LocationID}`;
+      const hist = seriesMap.get(key) || { dates: [], qtys: [] };
+      const metrics = computeMetrics(hist.dates, hist.qtys);
+
+      const row: ClassificationRow = {
+        ProductID: r.ProductID,
+        ChannelID: r.ChannelID,
+        LocationID: r.LocationID,
+        periods: metrics.periods,
+        nonzero_count: metrics.nonzero,
+        adi: metrics.adi,
+        cv2: metrics.cv2,
+        category: metrics.category,
+        seasonal: null,
+        createdAt: r.ComputedAt,  // use backend timestamp
+      };
+      return row;
+    });
+
+    if (!this.rows.length) {
+      this.errorMsg = 'No Cleansed-History found for these keys. Please run Cleanse History first.';
+    }
+  } catch (e: any) {
+    this.errorMsg = e?.error?.detail || e?.message || 'Failed to classify.';
+  } finally {
+    this.loading = false;
+  }
+}
+
+  
   /** Save computed rows to the backend so the Data page can read them */
   async saveResults() {
     this.saveMsg = this.saveErr = null;

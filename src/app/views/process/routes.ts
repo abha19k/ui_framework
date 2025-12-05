@@ -18,14 +18,14 @@ export const routes: Routes = [
         data: {
           title: 'Forecast Tuning'
         }
-      },
-      {
-        path: 'consensus-forecasting',
-        loadComponent: () => import('./consensus-forecasting/consensus-forecasting.component').then(m => m.ConsensusForecastingComponent),
-        data: {
-          title: 'Consensus Forecasting'
-        }
       }
+      // {
+      //   path: 'consensus-forecasting',
+      //   loadComponent: () => import('./consensus-forecasting/consensus-forecasting.component').then(m => m.ConsensusForecastingComponent),
+      //   data: {
+      //     title: 'Consensus Forecasting'
+      //   }
+      // }
     ]
   }
 ];
