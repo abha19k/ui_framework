@@ -54,6 +54,16 @@ export const navItems: INavData[] = [
         name: 'KPI',
         url: '/data/kpi',
         icon: 'nav-icon-bullet'
+      },
+      {
+        name: 'Weather Correlation',
+        url: '/data/weather-correlation',
+        icon: 'nav-icon-bullet'
+      },
+      {
+        name: 'Supply Data',
+        url: '/data/supply-data',
+        icon: 'nav-icon-bullet' 
       },      
       {
         name: 'Global Parameters',
